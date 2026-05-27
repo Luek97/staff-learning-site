@@ -1,0 +1,1328 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>五線譜學習網站</title>
+  <style>
+    :root {
+      --bg: #f6f7fb;
+      --panel: #ffffff;
+      --ink: #20242d;
+      --muted: #667085;
+      --line: #d7dce6;
+      --brand: #2563eb;
+      --brand-soft: #dbeafe;
+      --ok: #15803d;
+      --ok-soft: #dcfce7;
+      --bad: #b42318;
+      --bad-soft: #fee4e2;
+      --shadow: 0 14px 40px rgba(22, 34, 58, 0.09);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 18% 0%, rgba(37, 99, 235, 0.10), transparent 28rem),
+        linear-gradient(180deg, #fbfcff 0%, var(--bg) 48%);
+      font-family: "Microsoft JhengHei", "Noto Sans TC", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    button,
+    input,
+    select {
+      font: inherit;
+    }
+
+    .app {
+      display: grid;
+      grid-template-columns: 292px minmax(0, 1fr);
+      gap: 20px;
+      width: min(1220px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 22px 0;
+    }
+
+    .sidebar {
+      position: sticky;
+      top: 18px;
+      align-self: start;
+      max-height: calc(100vh - 36px);
+      overflow: auto;
+      padding: 18px;
+      background: rgba(255, 255, 255, 0.94);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+
+    .brand {
+      margin-bottom: 18px;
+    }
+
+    .brand h1 {
+      margin: 0 0 6px;
+      font-size: 24px;
+      letter-spacing: 0;
+    }
+
+    .brand p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    .control-group {
+      padding: 14px 0;
+      border-top: 1px solid var(--line);
+    }
+
+    .control-title {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 10px;
+      color: #303846;
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .segmented {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 6px;
+      padding: 4px;
+      background: #edf1f7;
+      border-radius: 8px;
+    }
+
+    .segmented button,
+    .choice-btn,
+    .action-btn {
+      border: 0;
+      cursor: pointer;
+      border-radius: 7px;
+      transition: transform 0.12s ease, background 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
+    }
+
+    .segmented button {
+      min-height: 38px;
+      color: #485367;
+      background: transparent;
+      font-weight: 700;
+    }
+
+    .segmented button.active {
+      color: var(--brand);
+      background: #fff;
+      box-shadow: 0 2px 8px rgba(31, 41, 55, 0.08);
+    }
+
+    .choice-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .choice-btn {
+      min-height: 38px;
+      padding: 7px 9px;
+      color: #3f4a5d;
+      background: #f3f6fb;
+      border: 1px solid #e2e7f0;
+      font-weight: 700;
+    }
+
+    .choice-btn.active {
+      color: var(--brand);
+      background: var(--brand-soft);
+      border-color: #93c5fd;
+    }
+
+    .range-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 10px;
+      align-items: center;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--brand);
+    }
+
+    .range-value {
+      min-width: 70px;
+      padding: 5px 8px;
+      text-align: center;
+      color: var(--brand);
+      background: var(--brand-soft);
+      border-radius: 7px;
+      font-weight: 800;
+    }
+
+    .note-checkboxes {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .note-checkboxes label {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 34px;
+      padding: 6px 8px;
+      background: #f8fafc;
+      border: 1px solid #e6ebf3;
+      border-radius: 7px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    .note-checkboxes input {
+      accent-color: var(--brand);
+    }
+
+    .main {
+      min-width: 0;
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 16px;
+      padding: 16px 18px;
+      background: rgba(255, 255, 255, 0.86);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+
+    .topbar h2 {
+      margin: 0 0 4px;
+      font-size: 22px;
+    }
+
+    .topbar p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .stats {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+    }
+
+    .stat {
+      min-width: 92px;
+      padding: 8px 10px;
+      text-align: center;
+      background: #f8fafc;
+      border: 1px solid #e7ebf2;
+      border-radius: 8px;
+    }
+
+    .stat strong {
+      display: block;
+      font-size: 20px;
+    }
+
+    .stat span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .stage {
+      padding: 18px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+
+    .staff-wrap {
+      position: relative;
+      overflow: hidden;
+      border: 1px solid #e5eaf2;
+      border-radius: 8px;
+      background: linear-gradient(180deg, #fff 0%, #fbfdff 100%);
+    }
+
+    .staff-svg {
+      display: block;
+      width: 100%;
+      min-width: 0;
+      height: 360px;
+    }
+
+    .label-toggle {
+      position: absolute;
+      left: 10px;
+      bottom: 10px;
+      z-index: 2;
+      display: flex;
+      gap: 3px;
+      padding: 4px;
+      background: rgba(255, 255, 255, 0.94);
+      border: 1px solid #d8deea;
+      border-radius: 8px;
+      box-shadow: 0 8px 20px rgba(31, 41, 55, 0.12);
+    }
+
+    .label-toggle button {
+      min-height: 30px;
+      padding: 4px 8px;
+      border: 0;
+      border-radius: 6px;
+      color: #475467;
+      background: transparent;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .label-toggle button.active {
+      color: var(--brand);
+      background: var(--brand-soft);
+    }
+
+    .feedback {
+      min-height: 44px;
+      margin-top: 14px;
+      padding: 10px 12px;
+      color: #3b4554;
+      background: #f8fafc;
+      border: 1px solid #e5eaf2;
+      border-radius: 8px;
+      font-weight: 700;
+    }
+
+    .feedback.ok {
+      color: var(--ok);
+      background: var(--ok-soft);
+      border-color: #86efac;
+    }
+
+    .feedback.bad {
+      color: var(--bad);
+      background: var(--bad-soft);
+      border-color: #fda29b;
+    }
+
+    .action-row {
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .action-btn {
+      min-height: 40px;
+      padding: 8px 14px;
+      color: #fff;
+      background: var(--brand);
+      font-weight: 800;
+    }
+
+    .action-btn.secondary {
+      color: #344054;
+      background: #eef2f7;
+    }
+
+    .keyboard-panel {
+      margin-top: 16px;
+      padding: 16px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+    }
+
+    .keyboard-title {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .keyboard {
+      display: grid;
+      grid-auto-flow: column;
+      grid-auto-columns: minmax(54px, 1fr);
+      min-height: 154px;
+      overflow-x: auto;
+      padding-bottom: 4px;
+      border-bottom: 7px solid #d7dce6;
+    }
+
+    .piano-key {
+      position: relative;
+      min-width: 54px;
+      height: 146px;
+      border: 1px solid #b8c0cc;
+      border-bottom-width: 4px;
+      border-radius: 0 0 7px 7px;
+      background: linear-gradient(180deg, #fff 0%, #f4f6f9 100%);
+      cursor: pointer;
+      color: #1f2937;
+    }
+
+    .piano-key:active,
+    .piano-key.pressed {
+      transform: translateY(2px);
+      background: var(--brand-soft);
+      border-color: #60a5fa;
+    }
+
+    .key-label {
+      position: absolute;
+      right: 6px;
+      bottom: 8px;
+      left: 6px;
+      text-align: center;
+      font-weight: 900;
+    }
+
+    .key-octave {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .learn-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 14px;
+    }
+
+    .learn-card {
+      padding: 8px 10px;
+      border: 1px solid #e5eaf2;
+      border-radius: 8px;
+      background: #fff;
+      cursor: pointer;
+    }
+
+    .learn-card svg {
+      display: none;
+    }
+
+    .learn-card strong {
+      display: inline;
+      font-size: 15px;
+    }
+
+    .learn-card span {
+      margin-left: 6px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .learn-note {
+      cursor: pointer;
+    }
+
+    .learn-note:focus-visible ellipse {
+      outline: none;
+      stroke: var(--brand);
+      stroke-width: 4;
+    }
+
+    .empty {
+      padding: 18px;
+      color: var(--muted);
+      text-align: center;
+      border: 1px dashed #cbd5e1;
+      border-radius: 8px;
+      background: #f8fafc;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    @media (max-width: 860px) {
+      .app {
+        grid-template-columns: 1fr;
+        width: min(100% - 12px, 720px);
+        padding: 10px 0 18px;
+      }
+
+      .sidebar {
+        position: static;
+        max-height: none;
+        padding: 14px;
+      }
+
+      .choice-grid,
+      .note-checkboxes {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+
+      .topbar {
+        align-items: flex-start;
+        flex-direction: column;
+        padding: 14px;
+      }
+
+      .stats {
+        justify-content: flex-start;
+      }
+
+      .staff-svg {
+        height: 300px;
+      }
+
+      .stage {
+        padding: 10px;
+      }
+
+      .label-toggle {
+        right: 8px;
+        bottom: 8px;
+        left: 8px;
+        justify-content: space-between;
+      }
+
+      .label-toggle button {
+        flex: 1;
+        padding: 5px 4px;
+      }
+
+      .learn-grid {
+        gap: 6px;
+      }
+
+      .learn-card {
+        padding: 7px 8px;
+      }
+
+      .keyboard {
+        grid-auto-columns: minmax(48px, 1fr);
+      }
+
+      .piano-key {
+        min-width: 48px;
+      }
+    }
+
+    @media (max-width: 520px) {
+      .brand h1 {
+        font-size: 21px;
+      }
+
+      .choice-grid,
+      .note-checkboxes {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        width: 100%;
+      }
+
+      .stat {
+        min-width: 0;
+      }
+
+      .staff-svg {
+        height: 260px;
+      }
+
+      .keyboard {
+        grid-auto-columns: minmax(42px, 1fr);
+      }
+
+      .piano-key {
+        min-width: 42px;
+        height: 124px;
+      }
+
+      .key-label {
+        font-size: 13px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar" aria-label="功能選單">
+      <div class="brand">
+        <h1>五線譜學習</h1>
+        <p>看音符，點鋼琴鍵。先從白鍵與 Do Re Mi 開始，慢慢把位置感練起來。</p>
+      </div>
+
+      <section class="control-group">
+        <div class="control-title">譜號版本</div>
+        <div class="segmented" role="tablist" aria-label="選擇譜號">
+          <button type="button" class="active" data-clef="treble">高音譜記號</button>
+          <button type="button" data-clef="bass">低音譜記號</button>
+        </div>
+      </section>
+
+      <section class="control-group">
+        <div class="control-title">功能模式</div>
+        <div class="segmented" role="tablist" aria-label="選擇模式">
+          <button type="button" class="active" data-mode="practice">練習</button>
+          <button type="button" data-mode="learn">學習</button>
+        </div>
+      </section>
+
+      <section class="control-group">
+        <div class="control-title">音符篩選</div>
+        <div class="choice-grid" aria-label="音符篩選">
+          <button type="button" class="choice-btn active" data-filter="all">全部</button>
+          <button type="button" class="choice-btn" data-filter="line">線上音符</button>
+          <button type="button" class="choice-btn" data-filter="space">間上音符</button>
+          <button type="button" class="choice-btn" data-filter="custom">自訂音符</button>
+        </div>
+      </section>
+
+      <section class="control-group">
+        <div class="control-title">
+          <span>音域加線範圍</span>
+          <span class="range-value" id="rangeValue">上下 1 線</span>
+        </div>
+        <div class="range-row">
+          <input type="range" id="ledgerRange" min="0" max="5" value="1" aria-label="上下加線範圍">
+        </div>
+      </section>
+
+      <section class="control-group">
+        <div class="control-title">自訂音符</div>
+        <div class="note-checkboxes" id="noteOptions"></div>
+      </section>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <h2 id="pageTitle">高音譜記號練習</h2>
+          <p id="pageSubtitle">請看上方音符，並在下方鋼琴鍵盤點出相同音。</p>
+        </div>
+        <div class="stats" aria-label="練習統計">
+          <div class="stat">
+            <strong id="scoreText">0</strong>
+            <span>答對</span>
+          </div>
+          <div class="stat">
+            <strong id="tryText">0</strong>
+            <span>作答</span>
+          </div>
+          <div class="stat">
+            <strong id="poolText">0</strong>
+            <span>題庫音符</span>
+          </div>
+        </div>
+      </header>
+
+      <section class="stage" aria-label="五線譜">
+        <div class="staff-wrap">
+          <svg class="staff-svg" id="staffSvg" viewBox="0 0 900 360" role="img" aria-label="五線譜題目"></svg>
+          <div class="label-toggle" id="labelToggle" aria-label="切換音名顯示">
+            <button type="button" class="active" data-label-mode="both">音名+唱名</button>
+            <button type="button" data-label-mode="letter">音名</button>
+            <button type="button" data-label-mode="solfege">唱名</button>
+            <button type="button" data-label-mode="none">隱藏</button>
+          </div>
+        </div>
+        <div class="feedback" id="feedback">準備好了就點下方鋼琴鍵開始作答。</div>
+        <div class="action-row">
+          <button type="button" class="action-btn secondary" id="resetBtn">重設分數</button>
+          <button type="button" class="action-btn" id="nextBtn">換一題</button>
+        </div>
+        <div class="learn-grid hidden" id="learnGrid" aria-label="學習音符列表"></div>
+      </section>
+
+      <section class="keyboard-panel" id="keyboardPanel" aria-label="鋼琴鍵盤">
+        <div class="keyboard-title">
+          <strong>鋼琴白鍵</strong>
+          <span id="keyboardHint">點擊對應的 Do Re Mi 鍵</span>
+        </div>
+        <div class="keyboard" id="keyboard"></div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const STEP = 14;
+    const STAFF_TOP = 112;
+    const STAFF_LEFT = 165;
+    const STAFF_RIGHT = 820;
+    const STAFF_WIDTH = STAFF_RIGHT - STAFF_LEFT;
+    const NOTE_X = 475;
+    const SOLFEGE = ["Do", "Re", "Mi", "Fa", "Sol", "La", "Si"];
+    const LETTER_TO_SOLFEGE = {
+      C: "Do",
+      D: "Re",
+      E: "Mi",
+      F: "Fa",
+      G: "Sol",
+      A: "La",
+      B: "Si"
+    };
+    const LETTER_TO_FIXED_DO = {
+      C: "Do",
+      D: "Re",
+      E: "Mi",
+      F: "Fa",
+      G: "Sol",
+      A: "La",
+      B: "Si"
+    };
+    const CLEFS = {
+      treble: {
+        label: "高音譜記號",
+        symbol: "𝄞",
+        bottomMidi: 64,
+        symbolX: 78,
+        symbolY: 217,
+        symbolSize: 118
+      },
+      bass: {
+        label: "低音譜記號",
+        symbol: "𝄢",
+        bottomMidi: 43,
+        symbolX: 80,
+        symbolY: 188,
+        symbolSize: 92
+      }
+    };
+    const MIDI_BY_LETTER = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+    const LETTER_INDEX = { C: 0, D: 1, E: 2, F: 3, G: 4, A: 5, B: 6 };
+
+    const state = {
+      clef: "treble",
+      mode: "practice",
+      filter: "all",
+      ledger: 1,
+      selectedClasses: new Set(SOLFEGE),
+      current: null,
+      score: 0,
+      tries: 0,
+      timer: null,
+      audioContext: null,
+      labelMode: "both"
+    };
+
+    const els = {
+      staffSvg: document.getElementById("staffSvg"),
+      feedback: document.getElementById("feedback"),
+      keyboard: document.getElementById("keyboard"),
+      keyboardPanel: document.getElementById("keyboardPanel"),
+      keyboardHint: document.getElementById("keyboardHint"),
+      learnGrid: document.getElementById("learnGrid"),
+      noteOptions: document.getElementById("noteOptions"),
+      range: document.getElementById("ledgerRange"),
+      rangeValue: document.getElementById("rangeValue"),
+      pageTitle: document.getElementById("pageTitle"),
+      pageSubtitle: document.getElementById("pageSubtitle"),
+      scoreText: document.getElementById("scoreText"),
+      tryText: document.getElementById("tryText"),
+      poolText: document.getElementById("poolText"),
+      nextBtn: document.getElementById("nextBtn"),
+      resetBtn: document.getElementById("resetBtn"),
+      labelToggle: document.getElementById("labelToggle")
+    };
+
+    function midiToName(midi) {
+      const octave = Math.floor(midi / 12) - 1;
+      const letter = Object.keys(MIDI_BY_LETTER).find(key => MIDI_BY_LETTER[key] === midi % 12);
+      return {
+        letter,
+        octave,
+        solfege: LETTER_TO_SOLFEGE[letter],
+        key: `${letter}${octave}`
+      };
+    }
+
+    function diatonicNumber(note) {
+      return note.octave * 7 + LETTER_INDEX[note.letter];
+    }
+
+    function whiteMidiRange(start, end) {
+      const notes = [];
+      for (let midi = start; midi <= end; midi += 1) {
+        if (Object.values(MIDI_BY_LETTER).includes(midi % 12)) {
+          notes.push(midi);
+        }
+      }
+      return notes;
+    }
+
+    function clefNotes(clefName) {
+      const clef = CLEFS[clefName];
+      const bottomNote = midiToName(clef.bottomMidi);
+      const bottomDiatonic = diatonicNumber(bottomNote);
+      return whiteMidiRange(clef.bottomMidi - 12, clef.bottomMidi + 20).map(midi => {
+        const name = midiToName(midi);
+        const staffIndex = diatonicNumber(name) - bottomDiatonic;
+        return {
+          ...name,
+          midi,
+          clef: clefName,
+          staffIndex,
+          staffType: staffIndex % 2 === 0 ? "line" : "space"
+        };
+      });
+    }
+
+    function visibleNotes() {
+      const minIndex = -state.ledger * 2;
+      const maxIndex = 8 + state.ledger * 2;
+      return clefNotes(state.clef).filter(note => {
+        const inRange = note.staffIndex >= minIndex && note.staffIndex <= maxIndex;
+        const byKind = state.filter === "all" || state.filter === "custom" || note.staffType === state.filter;
+        const byCustom = state.filter !== "custom" || state.selectedClasses.has(note.solfege);
+        return inRange && byKind && byCustom;
+      });
+    }
+
+    function yForIndex(index) {
+      return STAFF_TOP + (8 - index) * STEP;
+    }
+
+    function staffLineY(lineNumber) {
+      return STAFF_TOP + lineNumber * STEP * 2;
+    }
+
+    function createSvgElement(tag, attrs = {}, text = "") {
+      const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
+      Object.entries(attrs).forEach(([key, value]) => el.setAttribute(key, value));
+      if (text) el.textContent = text;
+      return el;
+    }
+
+    function labelParts(note) {
+      if (state.labelMode === "letter") return [note.letter];
+      if (state.labelMode === "solfege") return [note.solfege];
+      if (state.labelMode === "none") return [];
+      return [note.letter, note.solfege];
+    }
+
+    function playNote(note) {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextClass) {
+        els.feedback.className = "feedback bad";
+        els.feedback.textContent = "這個瀏覽器不支援音訊播放。";
+        return;
+      }
+
+      if (!state.audioContext) {
+        state.audioContext = new AudioContextClass();
+      }
+
+      const context = state.audioContext;
+      if (context.state === "suspended") {
+        context.resume();
+      }
+
+      const now = context.currentTime;
+      const fundamental = 440 * Math.pow(2, (note.midi - 69) / 12);
+      const decay = Math.max(0.75, 1.65 - (note.midi - 48) * 0.018);
+      const master = context.createGain();
+      const filter = context.createBiquadFilter();
+      filter.type = "lowpass";
+      filter.frequency.setValueAtTime(5200, now);
+      filter.frequency.exponentialRampToValueAtTime(1300, now + decay);
+      master.gain.setValueAtTime(0.0001, now);
+      master.gain.exponentialRampToValueAtTime(0.42, now + 0.006);
+      master.gain.exponentialRampToValueAtTime(0.0001, now + decay);
+      master.connect(filter);
+      filter.connect(context.destination);
+
+      [
+        { multiple: 1, gain: 1, detune: 0 },
+        { multiple: 2.004, gain: 0.56, detune: 2 },
+        { multiple: 3.015, gain: 0.32, detune: -3 },
+        { multiple: 4.028, gain: 0.18, detune: 4 },
+        { multiple: 5.05, gain: 0.10, detune: -5 }
+      ].forEach(partial => {
+        const oscillator = context.createOscillator();
+        const partialGain = context.createGain();
+        oscillator.type = "sine";
+        oscillator.frequency.setValueAtTime(fundamental * partial.multiple, now);
+        oscillator.detune.setValueAtTime(partial.detune, now);
+        partialGain.gain.setValueAtTime(0.0001, now);
+        partialGain.gain.exponentialRampToValueAtTime(partial.gain, now + 0.004);
+        partialGain.gain.exponentialRampToValueAtTime(0.0001, now + decay * (1 - partial.gain * 0.12));
+        oscillator.connect(partialGain);
+        partialGain.connect(master);
+        oscillator.start(now);
+        oscillator.stop(now + decay + 0.08);
+      });
+
+      const noiseDuration = 0.035;
+      const noiseBuffer = context.createBuffer(1, Math.ceil(context.sampleRate * noiseDuration), context.sampleRate);
+      const noiseData = noiseBuffer.getChannelData(0);
+      for (let i = 0; i < noiseData.length; i += 1) {
+        const fade = 1 - i / noiseData.length;
+        noiseData[i] = (Math.random() * 2 - 1) * fade;
+      }
+      const hammer = context.createBufferSource();
+      const hammerGain = context.createGain();
+      const hammerFilter = context.createBiquadFilter();
+      hammer.buffer = noiseBuffer;
+      hammerFilter.type = "bandpass";
+      hammerFilter.frequency.setValueAtTime(Math.min(4200, fundamental * 7), now);
+      hammerFilter.Q.setValueAtTime(1.8, now);
+      hammerGain.gain.setValueAtTime(0.18, now);
+      hammerGain.gain.exponentialRampToValueAtTime(0.0001, now + noiseDuration);
+      hammer.connect(hammerFilter);
+      hammerFilter.connect(hammerGain);
+      hammerGain.connect(filter);
+      hammer.start(now);
+      hammer.stop(now + noiseDuration);
+    }
+
+    function renderStaff(note, options = {}) {
+      const { small = false, showLabel = false } = options;
+      const svg = small ? createSvgElement("svg", { viewBox: "0 0 240 120" }) : els.staffSvg;
+      svg.innerHTML = "";
+      if (!small) {
+        svg.setAttribute("viewBox", "0 0 900 360");
+        svg.style.minWidth = "";
+      }
+      const left = small ? 38 : STAFF_LEFT;
+      const right = small ? 214 : STAFF_RIGHT;
+      const top = small ? 26 : STAFF_TOP;
+      const step = small ? 6 : STEP;
+      const noteX = small ? 128 : NOTE_X;
+      const noteY = top + (8 - note.staffIndex) * step;
+      const clef = CLEFS[note.clef];
+
+      for (let i = 0; i < 5; i += 1) {
+        const y = top + i * step * 2;
+        svg.appendChild(createSvgElement("line", {
+          x1: left,
+          y1: y,
+          x2: right,
+          y2: y,
+          stroke: "#111827",
+          "stroke-width": small ? 1.4 : 2
+        }));
+      }
+
+      if (!small) {
+        svg.appendChild(createSvgElement("text", {
+          x: clef.symbolX,
+          y: clef.symbolY,
+          "font-size": clef.symbolSize,
+          "font-family": "Georgia, 'Times New Roman', serif",
+          fill: "#111827"
+        }, clef.symbol));
+      } else {
+        svg.appendChild(createSvgElement("text", {
+          x: 8,
+          y: 82,
+          "font-size": note.clef === "treble" ? 52 : 42,
+          "font-family": "Georgia, 'Times New Roman', serif",
+          fill: "#111827"
+        }, clef.symbol));
+      }
+
+      drawLedgerLines(svg, note.staffIndex, noteX, small ? 22 : 82, top, step);
+      svg.appendChild(createSvgElement("ellipse", {
+        cx: noteX,
+        cy: noteY,
+        rx: small ? 10 : 21,
+        ry: small ? 7 : 14,
+        transform: `rotate(-18 ${noteX} ${noteY})`,
+        fill: "#111827"
+      }));
+
+      if (!small) {
+        svg.appendChild(createSvgElement("text", {
+          x: NOTE_X,
+          y: 48,
+          "text-anchor": "middle",
+          "font-size": 22,
+          "font-weight": 800,
+          fill: "#344054"
+        }, state.mode === "practice" ? "這個音要按哪一個琴鍵？" : "目前篩選出的音符"));
+      }
+
+      if (showLabel) {
+        svg.appendChild(createSvgElement("text", {
+          x: 128,
+          y: 114,
+          "text-anchor": "middle",
+          "font-size": 14,
+          "font-weight": 800,
+          fill: "#2563eb"
+        }, `${note.solfege} ${note.octave}`));
+      }
+
+      if (small) return svg;
+    }
+
+    function renderLearnStaff(notes) {
+      const svg = els.staffSvg;
+      svg.innerHTML = "";
+      const width = 900;
+      const left = 165;
+      const right = 850;
+      const usableWidth = right - left - 126;
+      const noteSpacing = notes.length > 1 ? usableWidth / (notes.length - 1) : 0;
+      const top = STAFF_TOP;
+      const step = STEP;
+      const clef = CLEFS[state.clef];
+      svg.setAttribute("viewBox", "0 0 900 360");
+      svg.style.minWidth = "";
+
+      for (let i = 0; i < 5; i += 1) {
+        const y = top + i * step * 2;
+        svg.appendChild(createSvgElement("line", {
+          x1: left,
+          y1: y,
+          x2: right,
+          y2: y,
+          stroke: "#111827",
+          "stroke-width": 2
+        }));
+      }
+
+      svg.appendChild(createSvgElement("text", {
+        x: clef.symbolX,
+        y: clef.symbolY,
+        "font-size": clef.symbolSize,
+        "font-family": "Georgia, 'Times New Roman', serif",
+        fill: "#111827"
+      }, clef.symbol));
+
+      svg.appendChild(createSvgElement("text", {
+        x: width / 2,
+        y: 48,
+        "text-anchor": "middle",
+        "font-size": 22,
+        "font-weight": 800,
+        fill: "#344054"
+      }, "篩選出的音符、音名與唱名"));
+
+      notes.forEach((note, index) => {
+        const noteX = left + 64 + index * noteSpacing;
+        const noteY = top + (8 - note.staffIndex) * step;
+        const isDense = notes.length > 10;
+        const parts = labelParts(note);
+        const labelX = noteX + (isDense ? 18 : 28);
+        const labelY = noteY < 92 ? noteY + 34 : noteY - 4;
+        const longestLabel = parts.reduce((max, item) => Math.max(max, item.length), 0);
+        const labelWidth = Math.max(20, longestLabel * 7 + 10);
+        const labelHeight = parts.length > 1 ? 39 : 22;
+        const noteRx = isDense ? 14 : 18;
+        const noteRy = isDense ? 10 : 12;
+        const letterSize = isDense ? 13 : 15;
+        const solfegeSize = isDense ? 12 : 14;
+        const group = createSvgElement("g", {
+          class: "learn-note",
+          role: "button",
+          tabindex: "0",
+          "aria-label": `播放 ${note.letter} ${note.solfege}`
+        });
+        group.addEventListener("click", () => {
+          playNote(note);
+          els.feedback.className = "feedback ok";
+          els.feedback.textContent = `播放：${note.letter} / ${note.solfege}`;
+        });
+        group.addEventListener("keydown", event => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            playNote(note);
+            els.feedback.className = "feedback ok";
+            els.feedback.textContent = `播放：${note.letter} / ${note.solfege}`;
+          }
+        });
+        drawLedgerLines(svg, note.staffIndex, noteX, 58, top, step);
+        if (parts.length) {
+          group.appendChild(createSvgElement("rect", {
+            x: labelX - 5,
+            y: labelY - 17,
+            width: labelWidth,
+            height: labelHeight,
+            rx: 6,
+            fill: "#ffffff",
+            opacity: "0.92"
+          }));
+        }
+        group.appendChild(createSvgElement("ellipse", {
+          cx: noteX,
+          cy: noteY,
+          rx: noteRx,
+          ry: noteRy,
+          transform: `rotate(-18 ${noteX} ${noteY})`,
+          fill: "#111827"
+        }));
+        parts.forEach((part, partIndex) => {
+          const isLetter = part === note.letter;
+          group.appendChild(createSvgElement("text", {
+            x: labelX,
+            y: labelY + partIndex * 18,
+            "text-anchor": "start",
+            "font-size": isLetter ? letterSize : solfegeSize,
+            "font-weight": isLetter ? 900 : 800,
+            fill: isLetter ? "#2563eb" : "#475467"
+          }, part));
+        });
+        svg.appendChild(group);
+      });
+    }
+
+    function drawLedgerLines(svg, index, noteX, halfWidth, top, step) {
+      const ledgerIndexes = [];
+      if (index < 0) {
+        for (let i = 0; i >= index; i -= 2) ledgerIndexes.push(i);
+      }
+      if (index > 8) {
+        for (let i = 10; i <= index; i += 2) ledgerIndexes.push(i);
+      }
+      ledgerIndexes.forEach(ledgerIndex => {
+        const y = top + (8 - ledgerIndex) * step;
+        svg.appendChild(createSvgElement("line", {
+          x1: noteX - halfWidth / 2,
+          y1: y,
+          x2: noteX + halfWidth / 2,
+          y2: y,
+          stroke: "#111827",
+          "stroke-width": step < 10 ? 1.4 : 2
+        }));
+      });
+    }
+
+    function renderKeyboard(notes) {
+      const unique = [...new Map(notes.map(note => [note.key, note])).values()]
+        .sort((a, b) => a.midi - b.midi);
+      els.keyboard.innerHTML = "";
+      unique.forEach(note => {
+        const key = document.createElement("button");
+        key.type = "button";
+        key.className = "piano-key";
+        key.dataset.key = note.key;
+        key.dataset.midi = note.midi;
+        key.setAttribute("aria-label", `${note.solfege} ${note.octave}`);
+        key.innerHTML = `<span class="key-label">${note.solfege}<span class="key-octave">${note.octave}</span></span>`;
+        key.addEventListener("click", () => checkAnswer(note, key));
+        els.keyboard.appendChild(key);
+      });
+      els.keyboardHint.textContent = unique.length ? `目前可練 ${unique.length} 個白鍵` : "請調整篩選條件";
+    }
+
+    function renderNoteOptions() {
+      els.noteOptions.innerHTML = "";
+      SOLFEGE.forEach(name => {
+        const label = document.createElement("label");
+        label.innerHTML = `<input type="checkbox" value="${name}" ${state.selectedClasses.has(name) ? "checked" : ""}> <span>${name}</span>`;
+        label.querySelector("input").addEventListener("change", event => {
+          if (event.target.checked) {
+            state.selectedClasses.add(name);
+          } else {
+            state.selectedClasses.delete(name);
+          }
+          if (state.selectedClasses.size === 0) state.selectedClasses.add(name);
+          state.filter = "custom";
+          setActiveButtons("[data-filter]", "custom", "filter");
+          refresh();
+        });
+        els.noteOptions.appendChild(label);
+      });
+    }
+
+    function renderLearn(notes) {
+      els.learnGrid.innerHTML = "";
+      if (!notes.length) {
+        els.learnGrid.innerHTML = '<div class="empty">目前沒有符合條件的音符，請放寬音域或篩選。</div>';
+        return;
+      }
+      const showLabels = state.labelMode !== "none";
+      notes.forEach(note => {
+        const card = document.createElement("article");
+        card.className = "learn-card";
+        card.tabIndex = 0;
+        card.setAttribute("role", "button");
+        card.setAttribute("aria-label", `播放 ${note.letter} ${note.solfege}`);
+        card.addEventListener("click", () => {
+          playNote(note);
+          els.feedback.className = "feedback ok";
+          els.feedback.textContent = `播放：${note.letter} / ${note.solfege}`;
+        });
+        card.addEventListener("keydown", event => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            card.click();
+          }
+        });
+        const typeText = note.staffType === "line" ? "線上音符" : "間上音符";
+        const labelText = labelParts(note).join(" / ");
+        card.insertAdjacentHTML("beforeend", `<strong>${showLabels ? labelText : "點擊播放"}</strong><span>${typeText}</span>`);
+        els.learnGrid.appendChild(card);
+      });
+    }
+
+    function nextQuestion() {
+      clearTimeout(state.timer);
+      const notes = visibleNotes();
+      if (!notes.length) {
+        state.current = null;
+        els.staffSvg.innerHTML = "";
+        els.feedback.className = "feedback bad";
+        els.feedback.textContent = "目前沒有符合條件的題目，請調整音域或音符篩選。";
+        updateStats(notes);
+        return;
+      }
+      const lastKey = state.current && state.current.key;
+      let next = notes[Math.floor(Math.random() * notes.length)];
+      if (notes.length > 1) {
+        while (next.key === lastKey) {
+          next = notes[Math.floor(Math.random() * notes.length)];
+        }
+      }
+      state.current = next;
+      renderStaff(next);
+      els.feedback.className = "feedback";
+      els.feedback.textContent = "請在下方鋼琴鍵盤點出這個音。";
+      updateStats(notes);
+    }
+
+    function checkAnswer(note, keyEl) {
+      if (state.mode !== "practice" || !state.current) return;
+      playNote(note);
+      state.tries += 1;
+      document.querySelectorAll(".piano-key").forEach(key => key.classList.remove("pressed"));
+      keyEl.classList.add("pressed");
+      if (note.key === state.current.key) {
+        state.score += 1;
+        els.feedback.className = "feedback ok";
+        els.feedback.textContent = `答對了：${state.current.solfege}，下一題準備中。`;
+        updateStats(visibleNotes());
+        state.timer = setTimeout(nextQuestion, 720);
+      } else {
+        els.feedback.className = "feedback bad";
+        els.feedback.textContent = `再試一次。你點的是 ${note.solfege}，目前題目不是這個音。`;
+        updateStats(visibleNotes());
+      }
+    }
+
+    function updateStats(notes) {
+      els.scoreText.textContent = state.score;
+      els.tryText.textContent = state.tries;
+      els.poolText.textContent = notes.length;
+      els.rangeValue.textContent = state.ledger === 0 ? "五線內" : `上下 ${state.ledger} 線`;
+    }
+
+    function updateHeader() {
+      const modeText = state.mode === "practice" ? "練習" : "學習";
+      els.pageTitle.textContent = `${CLEFS[state.clef].label}${modeText}`;
+      els.pageSubtitle.textContent = state.mode === "practice"
+        ? "請看上方音符，並在下方鋼琴鍵盤點出相同音。"
+        : "目前列出所有符合篩選條件的音符與 Do Re Mi 名稱。";
+      els.nextBtn.classList.toggle("hidden", state.mode !== "practice");
+      els.keyboardPanel.classList.toggle("hidden", state.mode !== "practice");
+      els.learnGrid.classList.toggle("hidden", state.mode !== "learn");
+      els.labelToggle.classList.toggle("hidden", state.mode !== "learn");
+    }
+
+    function refresh() {
+      const notes = visibleNotes();
+      updateHeader();
+      updateStats(notes);
+      renderKeyboard(notes);
+      renderNoteOptions();
+      if (state.mode === "practice") {
+        if (!state.current || !notes.some(note => note.key === state.current.key)) {
+          nextQuestion();
+        } else {
+          renderStaff(state.current);
+        }
+      } else {
+        state.current = notes[0] || null;
+        if (state.current) renderLearnStaff(notes);
+        else els.staffSvg.innerHTML = "";
+        renderLearn(notes);
+        els.feedback.className = "feedback";
+        els.feedback.textContent = notes.length ? `目前共有 ${notes.length} 個音符可以學習。` : "目前沒有符合條件的音符。";
+      }
+    }
+
+    function setActiveButtons(selector, value, key) {
+      document.querySelectorAll(selector).forEach(button => {
+        button.classList.toggle("active", button.dataset[key] === value);
+      });
+    }
+
+    function bindControls() {
+      document.querySelectorAll("[data-clef]").forEach(button => {
+        button.addEventListener("click", () => {
+          state.clef = button.dataset.clef;
+          state.current = null;
+          setActiveButtons("[data-clef]", state.clef, "clef");
+          refresh();
+        });
+      });
+
+      document.querySelectorAll("[data-mode]").forEach(button => {
+        button.addEventListener("click", () => {
+          state.mode = button.dataset.mode;
+          setActiveButtons("[data-mode]", state.mode, "mode");
+          refresh();
+        });
+      });
+
+      document.querySelectorAll("[data-filter]").forEach(button => {
+        button.addEventListener("click", () => {
+          state.filter = button.dataset.filter;
+          state.current = null;
+          setActiveButtons("[data-filter]", state.filter, "filter");
+          refresh();
+        });
+      });
+
+      els.range.addEventListener("input", event => {
+        state.ledger = Number(event.target.value);
+        state.current = null;
+        refresh();
+      });
+
+      els.nextBtn.addEventListener("click", nextQuestion);
+      els.resetBtn.addEventListener("click", () => {
+        state.score = 0;
+        state.tries = 0;
+        els.feedback.className = "feedback";
+        els.feedback.textContent = "分數已重設，繼續練習吧。";
+        updateStats(visibleNotes());
+      });
+
+      document.querySelectorAll("[data-label-mode]").forEach(button => {
+        button.addEventListener("click", () => {
+          state.labelMode = button.dataset.labelMode;
+          setActiveButtons("[data-label-mode]", state.labelMode, "labelMode");
+          if (state.mode === "learn") {
+            refresh();
+          }
+        });
+      });
+    }
+
+    bindControls();
+    renderNoteOptions();
+    refresh();
+  </script>
+</body>
+</html>
