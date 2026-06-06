@@ -393,6 +393,27 @@
       color: #1f2937;
     }
 
+    .middle-c-key {
+      border-color: var(--brand);
+      box-shadow: inset 0 0 0 2px rgba(37, 99, 235, 0.22);
+    }
+
+    .middle-c-key::before {
+      position: absolute;
+      top: 8px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 3px 7px;
+      color: var(--brand);
+      background: var(--brand-soft);
+      border: 1px solid #93c5fd;
+      border-radius: 999px;
+      content: "中央 Do";
+      font-size: 11px;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+
     .black-key {
       position: absolute;
       top: 0;
@@ -602,7 +623,7 @@
       }
 
       .keyboard-inner {
-        min-height: 132px;
+        min-height: 138px;
       }
 
       .white-key {
@@ -620,6 +641,11 @@
       }
 
       .black-key .key-label {
+        font-size: 10px;
+      }
+
+      .middle-c-key::before {
+        top: 6px;
         font-size: 10px;
       }
     }
@@ -1212,16 +1238,24 @@
         .sort((a, b) => a.midi - b.midi);
       const whiteNotes = unique.filter(note => !note.isBlack);
       const whiteIndexByMidi = new Map(whiteNotes.map((note, index) => [note.midi, index]));
+      const middleCIndex = whiteIndexByMidi.get(60);
+      const viewportWidth = els.keyboard.clientWidth || 0;
+      const rawOffset = typeof middleCIndex === "number" && viewportWidth
+        ? viewportWidth / 2 - middleCIndex * WHITE_KEY_WIDTH - WHITE_KEY_WIDTH / 2
+        : 0;
+      const leadingScroll = Math.max(0, -rawOffset);
+      const centerOffset = Math.max(0, rawOffset);
+      const trailingSpace = viewportWidth ? viewportWidth / 2 : 0;
       const inner = document.createElement("div");
       inner.className = "keyboard-inner";
-      inner.style.width = `${Math.max(whiteNotes.length * WHITE_KEY_WIDTH, 1)}px`;
+      inner.style.width = `${Math.max(centerOffset + whiteNotes.length * WHITE_KEY_WIDTH + trailingSpace, 1)}px`;
       els.keyboard.innerHTML = "";
 
       whiteNotes.forEach((note, index) => {
         const key = document.createElement("button");
         key.type = "button";
-        key.className = "piano-key white-key";
-        key.style.left = `${index * WHITE_KEY_WIDTH}px`;
+        key.className = `piano-key white-key${note.midi === 60 ? " middle-c-key" : ""}`;
+        key.style.left = `${centerOffset + index * WHITE_KEY_WIDTH}px`;
         key.dataset.key = note.key;
         key.dataset.midi = note.midi;
         key.setAttribute("aria-label", `${note.solfege} ${note.octave}`);
@@ -1238,7 +1272,7 @@
         const key = document.createElement("button");
         key.type = "button";
         key.className = "piano-key black-key";
-        key.style.left = `${anchorIndex * WHITE_KEY_WIDTH + WHITE_KEY_WIDTH - BLACK_KEY_WIDTH / 2}px`;
+        key.style.left = `${centerOffset + anchorIndex * WHITE_KEY_WIDTH + WHITE_KEY_WIDTH - BLACK_KEY_WIDTH / 2}px`;
         key.dataset.key = note.key;
         key.dataset.midi = note.midi;
         key.setAttribute("aria-label", `${note.display} ${note.octave}`);
@@ -1248,8 +1282,11 @@
       });
 
       els.keyboard.appendChild(inner);
+      if (typeof middleCIndex === "number") {
+        els.keyboard.scrollLeft = leadingScroll;
+      }
       els.keyboardHint.textContent = unique.length
-        ? `目前音域 ${whiteNotes.length} 個白鍵，含黑鍵位置`
+        ? `目前音域 ${whiteNotes.length} 個白鍵，中央 Do 固定在中間`
         : "請調整音域條件";
     }
 
