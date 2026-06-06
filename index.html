@@ -362,32 +362,66 @@
     }
 
     .keyboard {
-      display: grid;
-      grid-auto-flow: column;
-      grid-auto-columns: minmax(54px, 1fr);
-      min-height: 154px;
+      position: relative;
+      min-height: 166px;
       overflow-x: auto;
       padding-bottom: 4px;
       border-bottom: 7px solid #d7dce6;
     }
 
+    .keyboard-inner {
+      position: relative;
+      min-height: 154px;
+    }
+
     .piano-key {
       position: relative;
-      min-width: 54px;
+      border: 0;
+      cursor: pointer;
+      font: inherit;
+    }
+
+    .white-key {
+      position: absolute;
+      top: 0;
+      width: 54px;
       height: 146px;
       border: 1px solid #b8c0cc;
-      border-bottom-width: 4px;
+      border-bottom: 4px solid #9aa4b2;
       border-radius: 0 0 7px 7px;
       background: linear-gradient(180deg, #fff 0%, #f4f6f9 100%);
-      cursor: pointer;
       color: #1f2937;
+    }
+
+    .black-key {
+      position: absolute;
+      top: 0;
+      z-index: 2;
+      width: 34px;
+      height: 94px;
+      border: 1px solid #111827;
+      border-bottom: 4px solid #020617;
+      border-radius: 0 0 6px 6px;
+      background: linear-gradient(180deg, #111827 0%, #020617 100%);
+      color: #fff;
+      box-shadow: 0 6px 10px rgba(15, 23, 42, 0.28);
     }
 
     .piano-key:active,
     .piano-key.pressed {
       transform: translateY(2px);
+    }
+
+    .white-key:active,
+    .white-key.pressed {
       background: var(--brand-soft);
       border-color: #60a5fa;
+    }
+
+    .black-key:active,
+    .black-key.pressed {
+      background: linear-gradient(180deg, #1d4ed8 0%, #1e3a8a 100%);
+      border-color: #1e3a8a;
     }
 
     .key-label {
@@ -404,6 +438,20 @@
       color: var(--muted);
       font-size: 12px;
       font-weight: 700;
+    }
+
+    .black-key .key-label {
+      right: 3px;
+      bottom: 9px;
+      left: 3px;
+      color: #f8fafc;
+      font-size: 12px;
+      line-height: 1.1;
+    }
+
+    .black-key .key-octave {
+      color: #cbd5e1;
+      font-size: 10px;
     }
 
     .learn-grid {
@@ -515,12 +563,13 @@
         padding: 7px 8px;
       }
 
-      .keyboard {
-        grid-auto-columns: minmax(48px, 1fr);
+      .white-key {
+        width: 54px;
       }
 
-      .piano-key {
-        min-width: 48px;
+      .black-key {
+        width: 34px;
+        height: 88px;
       }
     }
 
@@ -549,16 +598,29 @@
       }
 
       .keyboard {
-        grid-auto-columns: minmax(42px, 1fr);
+        min-height: 146px;
       }
 
-      .piano-key {
-        min-width: 42px;
+      .keyboard-inner {
+        min-height: 132px;
+      }
+
+      .white-key {
+        width: 54px;
         height: 124px;
+      }
+
+      .black-key {
+        width: 34px;
+        height: 78px;
       }
 
       .key-label {
         font-size: 13px;
+      }
+
+      .black-key .key-label {
+        font-size: 10px;
       }
     }
   </style>
@@ -655,7 +717,7 @@
 
       <section class="keyboard-panel" id="keyboardPanel" aria-label="鋼琴鍵盤">
         <div class="keyboard-title">
-          <strong>鋼琴白鍵</strong>
+          <strong>鋼琴鍵盤</strong>
           <span id="keyboardHint">點擊對應的 Do Re Mi 鍵</span>
         </div>
         <div class="keyboard" id="keyboard"></div>
@@ -709,6 +771,9 @@
     };
     const MIDI_BY_LETTER = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
     const LETTER_INDEX = { C: 0, D: 1, E: 2, F: 3, G: 4, A: 5, B: 6 };
+    const CHROMATIC_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+    const WHITE_KEY_WIDTH = 54;
+    const BLACK_KEY_WIDTH = 34;
 
     const state = {
       clef: "treble",
@@ -755,6 +820,23 @@
       };
     }
 
+    function midiToKeyboardNote(midi) {
+      const octave = Math.floor(midi / 12) - 1;
+      const pitch = midi % 12;
+      const name = CHROMATIC_NAMES[pitch];
+      const isBlack = name.includes("#");
+      const letter = isBlack ? name : Object.keys(MIDI_BY_LETTER).find(key => MIDI_BY_LETTER[key] === pitch);
+      return {
+        midi,
+        octave,
+        letter,
+        solfege: isBlack ? name : LETTER_TO_SOLFEGE[letter],
+        key: `${name}${octave}`,
+        isBlack,
+        display: name
+      };
+    }
+
     function diatonicNumber(note) {
       return note.octave * 7 + LETTER_INDEX[note.letter];
     }
@@ -795,6 +877,24 @@
         const byCustom = state.filter !== "custom" || state.selectedClasses.has(note.solfege);
         return inRange && byKind && byCustom;
       });
+    }
+
+    function rangeNotes() {
+      const minIndex = -state.ledger * 2;
+      const maxIndex = 8 + state.ledger * 2;
+      return clefNotes(state.clef).filter(note => note.staffIndex >= minIndex && note.staffIndex <= maxIndex);
+    }
+
+    function keyboardNotes() {
+      const notes = rangeNotes();
+      if (!notes.length) return [];
+      const minMidi = Math.min(...notes.map(note => note.midi));
+      const maxMidi = Math.max(...notes.map(note => note.midi));
+      const result = [];
+      for (let midi = minMidi; midi <= maxMidi; midi += 1) {
+        result.push(midiToKeyboardNote(midi));
+      }
+      return result;
     }
 
     function yForIndex(index) {
@@ -1110,19 +1210,47 @@
     function renderKeyboard(notes) {
       const unique = [...new Map(notes.map(note => [note.key, note])).values()]
         .sort((a, b) => a.midi - b.midi);
+      const whiteNotes = unique.filter(note => !note.isBlack);
+      const whiteIndexByMidi = new Map(whiteNotes.map((note, index) => [note.midi, index]));
+      const inner = document.createElement("div");
+      inner.className = "keyboard-inner";
+      inner.style.width = `${Math.max(whiteNotes.length * WHITE_KEY_WIDTH, 1)}px`;
       els.keyboard.innerHTML = "";
-      unique.forEach(note => {
+
+      whiteNotes.forEach((note, index) => {
         const key = document.createElement("button");
         key.type = "button";
-        key.className = "piano-key";
+        key.className = "piano-key white-key";
+        key.style.left = `${index * WHITE_KEY_WIDTH}px`;
         key.dataset.key = note.key;
         key.dataset.midi = note.midi;
         key.setAttribute("aria-label", `${note.solfege} ${note.octave}`);
         key.innerHTML = `<span class="key-label">${note.solfege}<span class="key-octave">${note.octave}</span></span>`;
         key.addEventListener("click", () => checkAnswer(note, key));
-        els.keyboard.appendChild(key);
+        inner.appendChild(key);
       });
-      els.keyboardHint.textContent = unique.length ? `目前可練 ${unique.length} 個白鍵` : "請調整篩選條件";
+
+      unique.filter(note => note.isBlack).forEach(note => {
+        const previousWhiteIndex = whiteIndexByMidi.get(note.midi - 1);
+        const nextWhiteIndex = whiteIndexByMidi.get(note.midi + 1);
+        const anchorIndex = previousWhiteIndex ?? (typeof nextWhiteIndex === "number" ? nextWhiteIndex - 1 : null);
+        if (anchorIndex === null) return;
+        const key = document.createElement("button");
+        key.type = "button";
+        key.className = "piano-key black-key";
+        key.style.left = `${anchorIndex * WHITE_KEY_WIDTH + WHITE_KEY_WIDTH - BLACK_KEY_WIDTH / 2}px`;
+        key.dataset.key = note.key;
+        key.dataset.midi = note.midi;
+        key.setAttribute("aria-label", `${note.display} ${note.octave}`);
+        key.innerHTML = `<span class="key-label">${note.display}<span class="key-octave">${note.octave}</span></span>`;
+        key.addEventListener("click", () => checkAnswer(note, key));
+        inner.appendChild(key);
+      });
+
+      els.keyboard.appendChild(inner);
+      els.keyboardHint.textContent = unique.length
+        ? `目前音域 ${whiteNotes.length} 個白鍵，含黑鍵位置`
+        : "請調整音域條件";
     }
 
     function renderNoteOptions() {
@@ -1215,7 +1343,7 @@
         state.timer = setTimeout(nextQuestion, 720);
       } else {
         els.feedback.className = "feedback bad";
-        els.feedback.textContent = `再試一次。你點的是 ${note.solfege}，目前題目不是這個音。`;
+        els.feedback.textContent = `再試一次。你點的是 ${note.display || note.solfege}，目前題目不是這個音。`;
         updateStats(visibleNotes());
       }
     }
@@ -1243,7 +1371,7 @@
       const notes = visibleNotes();
       updateHeader();
       updateStats(notes);
-      renderKeyboard(notes);
+      renderKeyboard(keyboardNotes());
       renderNoteOptions();
       if (state.mode === "practice") {
         if (!state.current || !notes.some(note => note.key === state.current.key)) {
