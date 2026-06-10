@@ -253,6 +253,18 @@
       box-shadow: var(--shadow);
     }
 
+    .practice-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .practice-toolbar .segmented {
+      width: min(360px, 100%);
+    }
+
     .staff-wrap {
       position: relative;
       overflow: hidden;
@@ -328,6 +340,7 @@
       justify-content: flex-end;
       gap: 10px;
       margin-top: 12px;
+      flex-wrap: wrap;
     }
 
     .action-btn {
@@ -341,6 +354,11 @@
     .action-btn.secondary {
       color: #344054;
       background: #eef2f7;
+    }
+
+    .action-btn.stop {
+      color: var(--bad);
+      background: var(--bad-soft);
     }
 
     .keyboard-panel {
@@ -543,6 +561,15 @@
         padding: 10px;
       }
 
+      .practice-toolbar {
+        align-items: stretch;
+        flex-direction: column;
+      }
+
+      .practice-toolbar .segmented {
+        width: 100%;
+      }
+
       .label-toggle {
         right: 8px;
         bottom: 8px;
@@ -699,6 +726,12 @@
       </header>
 
       <section class="stage" aria-label="五線譜">
+        <div class="practice-toolbar" id="practiceToolbar">
+          <div class="segmented" role="tablist" aria-label="選擇練習題型">
+            <button type="button" class="active" data-practice-type="single">單音練習</button>
+            <button type="button" data-practice-type="melody">旋律練習</button>
+          </div>
+        </div>
         <div class="staff-wrap">
           <svg class="staff-svg" id="staffSvg" viewBox="0 0 900 360" role="img" aria-label="五線譜題目"></svg>
           <div class="label-toggle" id="labelToggle" aria-label="切換音名顯示">
@@ -712,6 +745,9 @@
         <div class="action-row">
           <button type="button" class="action-btn secondary" id="resetBtn">重設分數</button>
           <button type="button" class="action-btn" id="nextBtn">換一題</button>
+          <button type="button" class="action-btn secondary hidden" id="generateMelodyBtn">產生旋律</button>
+          <button type="button" class="action-btn hidden" id="playMelodyBtn">播放旋律</button>
+          <button type="button" class="action-btn stop hidden" id="stopMelodyBtn">停止播放</button>
         </div>
         <div class="learn-grid hidden" id="learnGrid" aria-label="學習音符列表"></div>
       </section>
@@ -787,7 +823,13 @@
       tries: 0,
       timer: null,
       audioContext: null,
-      labelMode: "both"
+      labelMode: "both",
+      practiceType: "single",
+      melody: [],
+      melodyIndex: 0,
+      playbackTimers: [],
+      playbackIndex: null,
+      isPlayingMelody: false
     };
 
     const els = {
@@ -807,7 +849,11 @@
       poolText: document.getElementById("poolText"),
       nextBtn: document.getElementById("nextBtn"),
       resetBtn: document.getElementById("resetBtn"),
-      labelToggle: document.getElementById("labelToggle")
+      labelToggle: document.getElementById("labelToggle"),
+      practiceToolbar: document.getElementById("practiceToolbar"),
+      generateMelodyBtn: document.getElementById("generateMelodyBtn"),
+      playMelodyBtn: document.getElementById("playMelodyBtn"),
+      stopMelodyBtn: document.getElementById("stopMelodyBtn")
     };
 
     function midiToName(midi) {
@@ -918,6 +964,117 @@
       if (state.labelMode === "solfege") return [note.solfege];
       if (state.labelMode === "none") return [];
       return [note.letter, note.solfege];
+    }
+
+    function nearestNote(notes, targetMidi) {
+      if (!notes.length) return null;
+      return notes.reduce((best, note) => {
+        const bestDistance = Math.abs(best.midi - targetMidi);
+        const noteDistance = Math.abs(note.midi - targetMidi);
+        return noteDistance < bestDistance ? note : best;
+      }, notes[0]);
+    }
+
+    function rhythmForMeasure(index) {
+      const templates = [
+        [1, 1, 1, 1],
+        [1, 1, 2],
+        [2, 1, 1],
+        [1, 2, 1],
+        [2, 2]
+      ];
+      return templates[index % templates.length];
+    }
+
+    function generateMelody() {
+      stopMelodyPlayback();
+      const selectedPool = visibleNotes().sort((a, b) => a.midi - b.midi);
+      const fullPool = rangeNotes().sort((a, b) => a.midi - b.midi);
+      const sourcePool = selectedPool.length ? selectedPool : fullPool;
+      if (!sourcePool.length) {
+        state.melody = [];
+        state.melodyIndex = 0;
+        state.current = null;
+        els.feedback.className = "feedback bad";
+        els.feedback.textContent = "目前沒有可用音符，請調整音域或音符篩選。";
+        return;
+      }
+
+      const rhythms = [];
+      for (let measure = 0; measure < 4; measure += 1) {
+        let beat = 0;
+        rhythmForMeasure(measure).forEach(duration => {
+          rhythms.push({ measure, beat, duration });
+          beat += duration;
+        });
+      }
+
+      const requiredPoolCount = Math.ceil(rhythms.length * 0.7);
+      const contour = [0, 1, 2, 1, 0, 2, 3, 2, 1, 0, -1, 0, 1, 0];
+      const middle = sourcePool[Math.floor(sourcePool.length / 2)];
+      const melody = rhythms.map((slot, index) => {
+        const shouldUseSelected = index < requiredPoolCount || selectedPool.length < 2 || Math.random() < 0.82;
+        const target = middle.midi + contour[index % contour.length] * 2;
+        const note = nearestNote(shouldUseSelected ? sourcePool : fullPool, target) || middle;
+        return {
+          ...slot,
+          note,
+          fromSelected: selectedPool.some(poolNote => poolNote.key === note.key)
+        };
+      });
+
+      const selectedCount = melody.filter(item => item.fromSelected).length;
+      while (selectedPool.length && selectedCount / melody.length < 0.7) {
+        const replaceIndex = melody.findIndex(item => !item.fromSelected);
+        if (replaceIndex < 0) break;
+        melody[replaceIndex].note = nearestNote(selectedPool, melody[replaceIndex].note.midi);
+        melody[replaceIndex].fromSelected = true;
+      }
+
+      state.melody = melody;
+      state.melodyIndex = 0;
+      state.current = melody[0].note;
+      renderMelodyStaff();
+      els.feedback.className = "feedback";
+      const fitRate = Math.round((melody.filter(item => item.fromSelected).length / melody.length) * 100);
+      els.feedback.textContent = `已產生 4 小節旋律，${fitRate}% 音符符合目前篩選。可以先播放旋律，再依序彈奏。`;
+    }
+
+    function stopMelodyPlayback() {
+      state.playbackTimers.forEach(timer => clearTimeout(timer));
+      state.playbackTimers = [];
+      state.isPlayingMelody = false;
+      state.playbackIndex = null;
+    }
+
+    function playMelody() {
+      if (!state.melody.length) {
+        generateMelody();
+      }
+      if (!state.melody.length) return;
+      stopMelodyPlayback();
+      state.isPlayingMelody = true;
+      let elapsed = 0;
+      const beatMs = 520;
+      state.melody.forEach((item, index) => {
+        const timer = setTimeout(() => {
+          state.playbackIndex = index;
+          playNote(item.note);
+          renderMelodyStaff();
+          if (index === state.melody.length - 1) {
+            const doneTimer = setTimeout(() => {
+              state.isPlayingMelody = false;
+              state.playbackIndex = null;
+              renderMelodyStaff();
+            }, item.duration * beatMs);
+            state.playbackTimers.push(doneTimer);
+          }
+        }, elapsed);
+        state.playbackTimers.push(timer);
+        elapsed += item.duration * beatMs;
+      });
+      els.feedback.className = "feedback ok";
+      els.feedback.textContent = "正在播放旋律示範，跟著聽每個音的位置。";
     }
 
     function playNote(note) {
@@ -1187,6 +1344,125 @@
       });
     }
 
+    function renderMelodyStaff() {
+      const svg = els.staffSvg;
+      svg.innerHTML = "";
+      svg.setAttribute("viewBox", "0 0 900 360");
+      svg.style.minWidth = "";
+      if (!state.melody.length) {
+        svg.appendChild(createSvgElement("text", {
+          x: 450,
+          y: 178,
+          "text-anchor": "middle",
+          "font-size": 22,
+          "font-weight": 800,
+          fill: "#667085"
+        }, "按「產生旋律」開始 4 小節練習"));
+        return;
+      }
+
+      const left = 150;
+      const right = 835;
+      const top = STAFF_TOP;
+      const step = STEP;
+      const measureWidth = (right - left) / 4;
+      const clef = CLEFS[state.clef];
+
+      for (let i = 0; i < 5; i += 1) {
+        const y = top + i * step * 2;
+        svg.appendChild(createSvgElement("line", {
+          x1: left,
+          y1: y,
+          x2: right,
+          y2: y,
+          stroke: "#111827",
+          "stroke-width": 2
+        }));
+      }
+
+      svg.appendChild(createSvgElement("text", {
+        x: clef.symbolX,
+        y: clef.symbolY,
+        "font-size": clef.symbolSize,
+        "font-family": "Georgia, 'Times New Roman', serif",
+        fill: "#111827"
+      }, clef.symbol));
+
+      svg.appendChild(createSvgElement("text", {
+        x: 450,
+        y: 48,
+        "text-anchor": "middle",
+        "font-size": 22,
+        "font-weight": 800,
+        fill: "#344054"
+      }, "4 小節旋律練習"));
+
+      for (let measure = 0; measure <= 4; measure += 1) {
+        const x = left + measure * measureWidth;
+        svg.appendChild(createSvgElement("line", {
+          x1: x,
+          y1: staffLineY(0),
+          x2: x,
+          y2: staffLineY(4),
+          stroke: "#111827",
+          "stroke-width": measure === 4 ? 3 : 1.8
+        }));
+      }
+
+      state.melody.forEach((item, index) => {
+        const note = item.note;
+        const noteX = left + item.measure * measureWidth + (item.beat + item.duration / 2) / 4 * measureWidth;
+        const noteY = top + (8 - note.staffIndex) * step;
+        const isCurrent = index === state.melodyIndex;
+        const isPlayback = index === state.playbackIndex;
+        const noteGroup = createSvgElement("g", {
+          class: "melody-note",
+          "aria-label": `${note.letter} ${note.solfege}`
+        });
+
+        drawLedgerLines(svg, note.staffIndex, noteX, 58, top, step);
+        if (isCurrent || isPlayback) {
+          noteGroup.appendChild(createSvgElement("ellipse", {
+            cx: noteX,
+            cy: noteY,
+            rx: 29,
+            ry: 21,
+            fill: isPlayback ? "#fef3c7" : "#dbeafe",
+            stroke: isPlayback ? "#f59e0b" : "#2563eb",
+            "stroke-width": 3
+          }));
+        }
+
+        noteGroup.appendChild(createSvgElement("ellipse", {
+          cx: noteX,
+          cy: noteY,
+          rx: 18,
+          ry: 12,
+          transform: `rotate(-18 ${noteX} ${noteY})`,
+          fill: item.duration === 2 ? "#ffffff" : "#111827",
+          stroke: "#111827",
+          "stroke-width": 2
+        }));
+        noteGroup.appendChild(createSvgElement("line", {
+          x1: noteX + 16,
+          y1: noteY,
+          x2: noteX + 16,
+          y2: noteY - 55,
+          stroke: "#111827",
+          "stroke-width": 2.4
+        }));
+        noteGroup.appendChild(createSvgElement("text", {
+          x: noteX,
+          y: 302,
+          "text-anchor": "middle",
+          "font-size": 13,
+          "font-weight": 800,
+          fill: isCurrent ? "#2563eb" : "#667085"
+        }, `${note.letter}/${note.solfege}`));
+        svg.appendChild(noteGroup);
+      });
+    }
+
     function drawLedgerLines(svg, index, noteX, halfWidth, top, step) {
       const ledgerIndexes = [];
       if (index < 0) {
@@ -1270,7 +1546,11 @@
             state.selectedClasses.delete(name);
           }
           if (state.selectedClasses.size === 0) state.selectedClasses.add(name);
+          stopMelodyPlayback();
           state.filter = "custom";
+          state.current = null;
+          state.melody = [];
+          state.melodyIndex = 0;
           setActiveButtons("[data-filter]", "custom", "filter");
           refresh();
         });
@@ -1311,6 +1591,7 @@
 
     function nextQuestion() {
       clearTimeout(state.timer);
+      stopMelodyPlayback();
       const notes = visibleNotes();
       if (!notes.length) {
         state.current = null;
@@ -1334,8 +1615,38 @@
       updateStats(notes);
     }
 
+    function checkMelodyAnswer(note, keyEl) {
+      if (!state.melody.length || state.melodyIndex >= state.melody.length) return;
+      const target = state.melody[state.melodyIndex].note;
+      playNote(note);
+      state.tries += 1;
+      document.querySelectorAll(".piano-key").forEach(key => key.classList.remove("pressed"));
+      keyEl.classList.add("pressed");
+      if (note.key === target.key) {
+        state.score += 1;
+        state.melodyIndex += 1;
+        state.current = state.melody[state.melodyIndex]?.note || null;
+        renderMelodyStaff();
+        if (state.melodyIndex >= state.melody.length) {
+          els.feedback.className = "feedback ok";
+          els.feedback.textContent = "太好了，4 小節旋律完成！可以再產生一段新的旋律。";
+        } else {
+          els.feedback.className = "feedback ok";
+          els.feedback.textContent = `答對了，下一個音是 ${state.current.solfege}。`;
+        }
+      } else {
+        els.feedback.className = "feedback bad";
+        els.feedback.textContent = `再試一次。你點的是 ${note.display || note.solfege}，目前要彈的是 ${target.solfege}。`;
+      }
+      updateStats(visibleNotes());
+    }
+
     function checkAnswer(note, keyEl) {
       if (state.mode !== "practice" || !state.current) return;
+      if (state.practiceType === "melody") {
+        checkMelodyAnswer(note, keyEl);
+        return;
+      }
       playNote(note);
       state.tries += 1;
       document.querySelectorAll(".piano-key").forEach(key => key.classList.remove("pressed"));
@@ -1362,11 +1673,16 @@
 
     function updateHeader() {
       const modeText = state.mode === "practice" ? "練習" : "學習";
-      els.pageTitle.textContent = `${CLEFS[state.clef].label}${modeText}`;
+      const practiceTypeText = state.mode === "practice" && state.practiceType === "melody" ? "旋律" : "";
+      els.pageTitle.textContent = `${CLEFS[state.clef].label}${practiceTypeText}${modeText}`;
       els.pageSubtitle.textContent = state.mode === "practice"
-        ? "請看上方音符，並在下方鋼琴鍵盤點出相同音。"
+        ? (state.practiceType === "melody" ? "先聽 4 小節旋律，再依序在鋼琴鍵盤彈出高亮音。" : "請看上方音符，並在下方鋼琴鍵盤點出相同音。")
         : "目前列出所有符合篩選條件的音符與 Do Re Mi 名稱。";
-      els.nextBtn.classList.toggle("hidden", state.mode !== "practice");
+      els.practiceToolbar.classList.toggle("hidden", state.mode !== "practice");
+      els.nextBtn.classList.toggle("hidden", state.mode !== "practice" || state.practiceType !== "single");
+      els.generateMelodyBtn.classList.toggle("hidden", state.mode !== "practice" || state.practiceType !== "melody");
+      els.playMelodyBtn.classList.toggle("hidden", state.mode !== "practice" || state.practiceType !== "melody");
+      els.stopMelodyBtn.classList.toggle("hidden", state.mode !== "practice" || state.practiceType !== "melody");
       els.keyboardPanel.classList.toggle("hidden", state.mode !== "practice");
       els.learnGrid.classList.toggle("hidden", state.mode !== "learn");
       els.labelToggle.classList.toggle("hidden", state.mode !== "learn");
@@ -1379,7 +1695,14 @@
       renderKeyboard(keyboardNotes());
       renderNoteOptions();
       if (state.mode === "practice") {
-        if (!state.current || !notes.some(note => note.key === state.current.key)) {
+        if (state.practiceType === "melody") {
+          if (!state.melody.length || !state.melody.some(item => notes.some(note => note.key === item.note.key))) {
+            generateMelody();
+          } else {
+            state.current = state.melody[state.melodyIndex]?.note || null;
+            renderMelodyStaff();
+          }
+        } else if (!state.current || !notes.some(note => note.key === state.current.key)) {
           nextQuestion();
         } else {
           renderStaff(state.current);
@@ -1403,8 +1726,11 @@
     function bindControls() {
       document.querySelectorAll("[data-clef]").forEach(button => {
         button.addEventListener("click", () => {
+          stopMelodyPlayback();
           state.clef = button.dataset.clef;
           state.current = null;
+          state.melody = [];
+          state.melodyIndex = 0;
           setActiveButtons("[data-clef]", state.clef, "clef");
           refresh();
         });
@@ -1412,31 +1738,64 @@
 
       document.querySelectorAll("[data-mode]").forEach(button => {
         button.addEventListener("click", () => {
+          stopMelodyPlayback();
           state.mode = button.dataset.mode;
           setActiveButtons("[data-mode]", state.mode, "mode");
           refresh();
         });
       });
 
+      document.querySelectorAll("[data-practice-type]").forEach(button => {
+        button.addEventListener("click", () => {
+          stopMelodyPlayback();
+          state.practiceType = button.dataset.practiceType;
+          state.current = null;
+          state.melody = [];
+          state.melodyIndex = 0;
+          setActiveButtons("[data-practice-type]", state.practiceType, "practiceType");
+          refresh();
+        });
+      });
+
       document.querySelectorAll("[data-filter]").forEach(button => {
         button.addEventListener("click", () => {
+          stopMelodyPlayback();
           state.filter = button.dataset.filter;
           state.current = null;
+          state.melody = [];
+          state.melodyIndex = 0;
           setActiveButtons("[data-filter]", state.filter, "filter");
           refresh();
         });
       });
 
       els.range.addEventListener("input", event => {
+        stopMelodyPlayback();
         state.ledger = Number(event.target.value);
         state.current = null;
+        state.melody = [];
+        state.melodyIndex = 0;
         refresh();
       });
 
       els.nextBtn.addEventListener("click", nextQuestion);
+      els.generateMelodyBtn.addEventListener("click", generateMelody);
+      els.playMelodyBtn.addEventListener("click", playMelody);
+      els.stopMelodyBtn.addEventListener("click", () => {
+        stopMelodyPlayback();
+        renderMelodyStaff();
+        els.feedback.className = "feedback";
+        els.feedback.textContent = "已停止播放，可以繼續自己彈奏。";
+      });
       els.resetBtn.addEventListener("click", () => {
+        stopMelodyPlayback();
         state.score = 0;
         state.tries = 0;
+        if (state.practiceType === "melody") {
+          state.melodyIndex = 0;
+          state.current = state.melody[0]?.note || null;
+          renderMelodyStaff();
+        }
         els.feedback.className = "feedback";
         els.feedback.textContent = "分數已重設，繼續練習吧。";
         updateStats(visibleNotes());
