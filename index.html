@@ -277,7 +277,7 @@
       display: block;
       width: 100%;
       min-width: 0;
-      height: 360px;
+      height: 430px;
     }
 
     .label-toggle {
@@ -559,7 +559,7 @@
       }
 
       .staff-svg {
-        height: 300px;
+        height: 370px;
       }
 
       .stage {
@@ -626,7 +626,7 @@
       }
 
       .staff-svg {
-        height: 260px;
+        height: 330px;
       }
 
       .keyboard {
@@ -839,6 +839,7 @@
       labelMode: "both",
       practiceType: "single",
       melody: [],
+      bassLine: [],
       melodyIndex: 0,
       playbackTimers: [],
       playbackIndex: null,
@@ -939,10 +940,27 @@
       });
     }
 
+    function visibleNotesForClef(clefName) {
+      const minIndex = -state.ledger * 2;
+      const maxIndex = 8 + state.ledger * 2;
+      return clefNotes(clefName).filter(note => {
+        const inRange = note.staffIndex >= minIndex && note.staffIndex <= maxIndex;
+        const byKind = state.filter === "all" || state.filter === "custom" || note.staffType === state.filter;
+        const byCustom = state.filter !== "custom" || state.selectedClasses.has(note.solfege);
+        return inRange && byKind && byCustom;
+      });
+    }
+
     function rangeNotes() {
       const minIndex = -state.ledger * 2;
       const maxIndex = 8 + state.ledger * 2;
       return clefNotes(state.clef).filter(note => note.staffIndex >= minIndex && note.staffIndex <= maxIndex);
+    }
+
+    function rangeNotesForClef(clefName) {
+      const minIndex = -state.ledger * 2;
+      const maxIndex = 8 + state.ledger * 2;
+      return clefNotes(clefName).filter(note => note.staffIndex >= minIndex && note.staffIndex <= maxIndex);
     }
 
     function keyboardNotes() {
@@ -988,24 +1006,70 @@
       }, notes[0]);
     }
 
+    function noteForClefMidi(clefName, midi) {
+      const clef = CLEFS[clefName];
+      const bottomNote = midiToName(clef.bottomMidi);
+      const name = midiToName(midi);
+      return {
+        ...name,
+        midi,
+        clef: clefName,
+        staffIndex: diatonicNumber(name) - diatonicNumber(bottomNote),
+        staffType: (diatonicNumber(name) - diatonicNumber(bottomNote)) % 2 === 0 ? "line" : "space"
+      };
+    }
+
+    function makeRest(measure, beat, duration, staff) {
+      return { measure, beat, duration, staff, type: "rest" };
+    }
+
+    function noteSlot(measure, beat, duration, note, extra = {}) {
+      return { measure, beat, duration, note, type: "note", ...extra };
+    }
+
     function rhythmForMeasure(index) {
       const templates = [
         [1, 1, 1, 1],
-        [1, 1, 2],
+        [1.5, 0.5, 1, 1],
         [2, 1, 1],
-        [1, 2, 1],
+        [0.5, 0.5, 1, 2],
         [2, 2]
       ];
       return templates[index % templates.length];
     }
 
+    function bassPatternForMeasure(measure, melodyItems) {
+      const firstNote = melodyItems[0]?.note || noteForClefMidi("treble", 60);
+      const rootMidi = firstNote.midi - 24;
+      const bassRoot = noteForClefMidi("bass", nearestNote(clefNotes("bass"), rootMidi).midi);
+      const fifth = noteForClefMidi("bass", nearestNote(clefNotes("bass"), rootMidi + 7).midi);
+      if (measure === 1) {
+        return [
+          noteSlot(measure, 0, 2, bassRoot, { staff: "bass" }),
+          makeRest(measure, 2, 1, "bass"),
+          noteSlot(measure, 3, 1, fifth, { staff: "bass" })
+        ];
+      }
+      if (measure === 2) {
+        return [
+          noteSlot(measure, 0, 3, bassRoot, { staff: "bass", dotted: true }),
+          makeRest(measure, 3, 1, "bass")
+        ];
+      }
+      return [
+        noteSlot(measure, 0, 2, bassRoot, { staff: "bass" }),
+        noteSlot(measure, 2, 2, fifth, { staff: "bass" })
+      ];
+    }
+
     function generateMelody() {
       stopMelodyPlayback();
-      const selectedPool = visibleNotes().sort((a, b) => a.midi - b.midi);
-      const fullPool = rangeNotes().sort((a, b) => a.midi - b.midi);
+      const selectedPool = visibleNotesForClef("treble").sort((a, b) => a.midi - b.midi);
+      const fullPool = rangeNotesForClef("treble").sort((a, b) => a.midi - b.midi);
       const sourcePool = selectedPool.length ? selectedPool : fullPool;
       if (!sourcePool.length) {
         state.melody = [];
+        state.bassLine = [];
         state.melodyIndex = 0;
         state.current = null;
         els.feedback.className = "feedback bad";
@@ -1031,7 +1095,10 @@
         const note = nearestNote(shouldUseSelected ? sourcePool : fullPool, target) || middle;
         return {
           ...slot,
+          staff: "treble",
+          type: "note",
           note,
+          dotted: slot.duration === 1.5,
           fromSelected: selectedPool.some(poolNote => poolNote.key === note.key)
         };
       });
@@ -1043,7 +1110,26 @@
         melody[replaceIndex].fromSelected = true;
       }
 
+      const tieStart = [...melody].reverse().find(item => item.measure === 0);
+      const tieEnd = melody.find(item => item.measure === 1);
+      if (tieStart && tieEnd) {
+        tieEnd.note = tieStart.note;
+        tieEnd.fromSelected = tieStart.fromSelected;
+        tieStart.tieToNext = true;
+        tieEnd.tiedFromPrevious = true;
+      }
+      if (melody[0] && melody[4]) {
+        melody[0].slurStart = true;
+        melody[4].slurEnd = true;
+      }
+
+      const bassLine = [];
+      for (let measure = 0; measure < 4; measure += 1) {
+        bassLine.push(...bassPatternForMeasure(measure, melody.filter(item => item.measure === measure)));
+      }
+
       state.melody = melody;
+      state.bassLine = bassLine;
       state.melodyIndex = 0;
       state.current = melody[0].note;
       renderMelodyStaff();
@@ -1085,11 +1171,18 @@
       if (!context) return;
       els.feedback.className = "feedback";
       els.feedback.textContent = "正在載入鋼琴取樣音色...";
-      const neededSamples = [...new Set(state.melody.map(item => nearestSampleMidi(item.note.midi)))];
+      const soundedItems = [...state.melody, ...(state.bassLine || [])].filter(item => item.type !== "rest");
+      const neededSamples = [...new Set(soundedItems.map(item => nearestSampleMidi(item.note.midi)))];
       await Promise.all(neededSamples.map(midi => loadPianoSample(context, midi)));
       state.isPlayingMelody = true;
       let elapsed = 0;
       const beatMs = 520;
+      (state.bassLine || []).filter(item => item.type !== "rest").forEach(item => {
+        const timer = setTimeout(() => {
+          playNote(item.note, Math.max(0.45, item.duration * beatMs / 1000));
+        }, (item.measure * 4 + item.beat) * beatMs);
+        state.playbackTimers.push(timer);
+      });
       state.melody.forEach((item, index) => {
         const timer = setTimeout(() => {
           state.playbackIndex = index;
@@ -1456,148 +1549,271 @@
       });
     }
 
-    function renderMelodyStaff() {
-      const svg = els.staffSvg;
-      svg.innerHTML = "";
-      svg.setAttribute("viewBox", "0 0 980 320");
-      svg.style.minWidth = "";
-      if (!state.melody.length) {
-        svg.appendChild(createSvgElement("text", {
-          x: 490,
-          y: 160,
-          "text-anchor": "middle",
-          "font-size": 22,
-          "font-weight": 800,
-          fill: "#667085"
-        }, "按「產生旋律」開始 4 小節練習"));
-        return;
-      }
+    function melodyX(item, layout) {
+      return layout.left + item.measure * layout.measureWidth + layout.notePad + (item.beat + item.duration * 0.42) / 4 * layout.beatWidth;
+    }
 
-      const left = 182;
-      const right = 930;
-      const top = 126;
-      const step = 13;
-      const measureWidth = (right - left) / 4;
-      const clef = CLEFS[state.clef];
-
-      svg.appendChild(createSvgElement("text", {
-        x: 490,
-        y: 48,
-        "text-anchor": "middle",
-        "font-size": 23,
-        "font-weight": 900,
-        fill: "#1f2937"
-      }, "4 小節旋律練習"));
-
+    function drawStaffLines(svg, top, layout) {
       for (let i = 0; i < 5; i += 1) {
-        const y = top + i * step * 2;
+        const y = top + i * layout.step * 2;
         svg.appendChild(createSvgElement("line", {
-          x1: left,
+          x1: layout.left,
           y1: y,
-          x2: right,
+          x2: layout.right,
           y2: y,
           stroke: "#111827",
-          "stroke-width": 2
+          "stroke-width": 1.8
         }));
       }
+    }
 
-      svg.appendChild(createSvgElement("text", {
-        x: 70,
-        y: state.clef === "treble" ? 226 : 198,
-        "font-size": clef.symbolSize,
-        "font-family": "Georgia, 'Times New Roman', serif",
-        fill: "#111827"
-      }, clef.symbol));
-
-      svg.appendChild(createSvgElement("text", {
-        x: 136,
-        y: top + 22,
-        "text-anchor": "middle",
-        "font-size": 27,
-        "font-family": "Georgia, 'Times New Roman', serif",
-        "font-weight": 700,
-        fill: "#111827"
-      }, "4"));
-
-      svg.appendChild(createSvgElement("text", {
-        x: 136,
-        y: top + 50,
-        "text-anchor": "middle",
-        "font-size": 27,
-        "font-family": "Georgia, 'Times New Roman', serif",
-        "font-weight": 700,
-        fill: "#111827"
-      }, "4"));
-
-      for (let measure = 0; measure <= 4; measure += 1) {
-        const x = left + measure * measureWidth;
-        svg.appendChild(createSvgElement("line", {
-          x1: x,
-          y1: top,
-          x2: x,
-          y2: top + step * 8,
-          stroke: "#111827",
-          "stroke-width": measure === 4 ? 3.5 : 1.9
+    function drawRest(svg, item, layout, staffTop) {
+      const x = melodyX(item, layout);
+      const y = staffTop + layout.step * 4;
+      if (item.duration >= 2) {
+        svg.appendChild(createSvgElement("rect", {
+          x: x - 14,
+          y: y - 2,
+          width: 28,
+          height: 7,
+          fill: "#111827"
+        }));
+      } else {
+        svg.appendChild(createSvgElement("text", {
+          x,
+          y: y + 15,
+          "text-anchor": "middle",
+          "font-size": item.duration < 1 ? 34 : 30,
+          "font-family": "Georgia, 'Times New Roman', serif",
+          fill: "#111827"
+        }, item.duration < 1 ? "𝄾" : "𝄽"));
+      }
+      if (item.dotted) {
+        svg.appendChild(createSvgElement("circle", {
+          cx: x + 24,
+          cy: y,
+          r: 3,
+          fill: "#111827"
         }));
       }
+    }
 
-      svg.appendChild(createSvgElement("line", {
-        x1: right - 7,
-        y1: top,
-        x2: right - 7,
-        y2: top + step * 8,
-        stroke: "#111827",
-        "stroke-width": 1.7
-      }));
+    function drawScoreNote(svg, item, index, layout, staffTop, options = {}) {
+      const note = item.note;
+      const noteX = melodyX(item, layout);
+      const noteY = staffTop + (8 - note.staffIndex) * layout.step;
+      const isCurrent = options.currentIndex === index;
+      const isPlayback = options.playbackIndex === index;
+      const stemUp = note.staffIndex <= 4;
+      const stemX = stemUp ? noteX + 13 : noteX - 13;
+      const stemEndY = stemUp ? noteY - 55 : noteY + 55;
+      const filled = item.duration < 2;
 
-      state.melody.forEach((item, index) => {
-        const note = item.note;
-        const noteX = left + item.measure * measureWidth + 28 + (item.beat + item.duration * 0.42) / 4 * (measureWidth - 56);
-        const noteY = top + (8 - note.staffIndex) * step;
-        const isCurrent = index === state.melodyIndex;
-        const isPlayback = index === state.playbackIndex;
-        const stemUp = note.staffIndex <= 4;
-        const stemX = stemUp ? noteX + 14 : noteX - 14;
-        const stemEndY = stemUp ? noteY - 62 : noteY + 62;
-        const noteGroup = createSvgElement("g", {
-          class: "melody-note",
-          "aria-label": `${note.letter} ${note.solfege}`
-        });
-
-        drawLedgerLines(svg, note.staffIndex, noteX, 48, top, step);
-        if (isCurrent || isPlayback) {
-          noteGroup.appendChild(createSvgElement("ellipse", {
-            cx: noteX,
-            cy: noteY,
-            rx: 27,
-            ry: 20,
-            fill: isPlayback ? "#fef3c7" : "#dbeafe",
-            stroke: isPlayback ? "#f59e0b" : "#2563eb",
-            "stroke-width": 3.2
-          }));
-        }
-
-        noteGroup.appendChild(createSvgElement("ellipse", {
+      drawLedgerLines(svg, note.staffIndex, noteX, 46, staffTop, layout.step);
+      if (isCurrent || isPlayback) {
+        svg.appendChild(createSvgElement("ellipse", {
           cx: noteX,
           cy: noteY,
-          rx: 17,
-          ry: 11.5,
-          transform: `rotate(-18 ${noteX} ${noteY})`,
-          fill: item.duration === 2 ? "#ffffff" : "#111827",
-          stroke: "#111827",
-          "stroke-width": item.duration === 2 ? 2.8 : 2
+          rx: 25,
+          ry: 18,
+          fill: isPlayback ? "#fef3c7" : "#dbeafe",
+          stroke: isPlayback ? "#f59e0b" : "#2563eb",
+          "stroke-width": 3
         }));
-        noteGroup.appendChild(createSvgElement("line", {
+      }
+      svg.appendChild(createSvgElement("ellipse", {
+        cx: noteX,
+        cy: noteY,
+        rx: 16,
+        ry: 10.5,
+        transform: `rotate(-18 ${noteX} ${noteY})`,
+        fill: filled ? "#111827" : "#ffffff",
+        stroke: "#111827",
+        "stroke-width": filled ? 2 : 2.7
+      }));
+      if (item.duration < 4) {
+        svg.appendChild(createSvgElement("line", {
           x1: stemX,
           y1: noteY,
           x2: stemX,
           y2: stemEndY,
           stroke: "#111827",
-          "stroke-width": 2.5,
+          "stroke-width": 2.3,
           "stroke-linecap": "round"
         }));
-        svg.appendChild(noteGroup);
+        item._stemX = stemX;
+        item._stemEndY = stemEndY;
+        item._stemUp = stemUp;
+      }
+      if (item.dotted) {
+        svg.appendChild(createSvgElement("circle", {
+          cx: noteX + 25,
+          cy: noteY - (note.staffIndex % 2 === 0 ? layout.step : 0),
+          r: 3.1,
+          fill: "#111827"
+        }));
+      }
+      item._x = noteX;
+      item._y = noteY;
+    }
+
+    function drawCurve(svg, start, end, lift, color = "#111827") {
+      if (!start || !end) return;
+      const path = `M ${start._x - 12} ${start._y + lift} C ${(start._x + end._x) / 2} ${Math.min(start._y, end._y) + lift - 38}, ${(start._x + end._x) / 2} ${Math.min(start._y, end._y) + lift - 38}, ${end._x + 12} ${end._y + lift}`;
+      svg.appendChild(createSvgElement("path", {
+        d: path,
+        fill: "none",
+        stroke: color,
+        "stroke-width": 2,
+        "stroke-linecap": "round"
+      }));
+    }
+
+    function drawEighthBeams(svg, items) {
+      const eighths = items.filter(item => item.type === "note" && item.duration === 0.5);
+      for (let i = 0; i < eighths.length - 1; i += 1) {
+        const current = eighths[i];
+        const next = eighths[i + 1];
+        if (current.measure !== next.measure || current.beat + current.duration !== next.beat || current._stemUp !== next._stemUp) continue;
+        svg.appendChild(createSvgElement("line", {
+          x1: current._stemX,
+          y1: current._stemEndY,
+          x2: next._stemX,
+          y2: next._stemEndY,
+          stroke: "#111827",
+          "stroke-width": 7,
+          "stroke-linecap": "butt"
+        }));
+      }
+    }
+
+    function renderMelodyStaff() {
+      const svg = els.staffSvg;
+      svg.innerHTML = "";
+      svg.setAttribute("viewBox", "0 0 1060 460");
+      svg.style.minWidth = "";
+      if (!state.melody.length) {
+        svg.appendChild(createSvgElement("text", {
+          x: 530,
+          y: 220,
+          "text-anchor": "middle",
+          "font-size": 22,
+          "font-weight": 800,
+          fill: "#667085"
+        }, "按「產生旋律」開始 4 小節鋼琴大譜表練習"));
+        return;
+      }
+
+      const layout = {
+        left: 205,
+        right: 1010,
+        trebleTop: 112,
+        bassTop: 270,
+        step: 12,
+        notePad: 30
+      };
+      layout.measureWidth = (layout.right - layout.left) / 4;
+      layout.beatWidth = layout.measureWidth - layout.notePad * 2;
+
+      svg.appendChild(createSvgElement("text", {
+        x: 530,
+        y: 42,
+        "text-anchor": "middle",
+        "font-size": 23,
+        "font-weight": 900,
+        fill: "#1f2937"
+      }, "4 小節鋼琴大譜表練習"));
+
+      drawStaffLines(svg, layout.trebleTop, layout);
+      drawStaffLines(svg, layout.bassTop, layout);
+
+      svg.appendChild(createSvgElement("path", {
+        d: `M ${layout.left - 28} ${layout.trebleTop - 8} C ${layout.left - 82} ${layout.trebleTop + 38}, ${layout.left - 82} ${layout.bassTop + 58}, ${layout.left - 28} ${layout.bassTop + 104}`,
+        fill: "none",
+        stroke: "#111827",
+        "stroke-width": 4,
+        "stroke-linecap": "round"
+      }));
+      svg.appendChild(createSvgElement("line", {
+        x1: layout.left - 6,
+        y1: layout.trebleTop,
+        x2: layout.left - 6,
+        y2: layout.bassTop + layout.step * 8,
+        stroke: "#111827",
+        "stroke-width": 2
+      }));
+
+      svg.appendChild(createSvgElement("text", {
+        x: 82,
+        y: 221,
+        "font-size": CLEFS.treble.symbolSize,
+        "font-family": "Georgia, 'Times New Roman', serif",
+        fill: "#111827"
+      }, CLEFS.treble.symbol));
+      svg.appendChild(createSvgElement("text", {
+        x: 96,
+        y: 346,
+        "font-size": CLEFS.bass.symbolSize,
+        "font-family": "Georgia, 'Times New Roman', serif",
+        fill: "#111827"
+      }, CLEFS.bass.symbol));
+
+      [layout.trebleTop, layout.bassTop].forEach(top => {
+        svg.appendChild(createSvgElement("text", {
+          x: 158,
+          y: top + 21,
+          "text-anchor": "middle",
+          "font-size": 26,
+          "font-family": "Georgia, 'Times New Roman', serif",
+          "font-weight": 700,
+          fill: "#111827"
+        }, "4"));
+        svg.appendChild(createSvgElement("text", {
+          x: 158,
+          y: top + 48,
+          "text-anchor": "middle",
+          "font-size": 26,
+          "font-family": "Georgia, 'Times New Roman', serif",
+          "font-weight": 700,
+          fill: "#111827"
+        }, "4"));
       });
+
+      for (let measure = 0; measure <= 4; measure += 1) {
+        const x = layout.left + measure * layout.measureWidth;
+        svg.appendChild(createSvgElement("line", {
+          x1: x,
+          y1: layout.trebleTop,
+          x2: x,
+          y2: layout.bassTop + layout.step * 8,
+          stroke: "#111827",
+          "stroke-width": measure === 4 ? 3.5 : 1.8
+        }));
+      }
+      svg.appendChild(createSvgElement("line", {
+        x1: layout.right - 7,
+        y1: layout.trebleTop,
+        x2: layout.right - 7,
+        y2: layout.bassTop + layout.step * 8,
+        stroke: "#111827",
+        "stroke-width": 1.6
+      }));
+
+      const trebleItems = state.melody;
+      const bassItems = state.bassLine || [];
+      trebleItems.forEach((item, index) => drawScoreNote(svg, item, index, layout, layout.trebleTop, {
+        currentIndex: state.melodyIndex,
+        playbackIndex: state.playbackIndex
+      }));
+      bassItems.forEach(item => {
+        if (item.type === "rest") drawRest(svg, item, layout, layout.bassTop);
+        else drawScoreNote(svg, item, -1, layout, layout.bassTop);
+      });
+
+      drawEighthBeams(svg, trebleItems);
+      drawEighthBeams(svg, bassItems);
+      drawCurve(svg, trebleItems.find(item => item.tieToNext), trebleItems.find(item => item.tiedFromPrevious), 22);
+      drawCurve(svg, trebleItems.find(item => item.slurStart), trebleItems.find(item => item.slurEnd), -14, "#475467");
     }
 
     function drawLedgerLines(svg, index, noteX, halfWidth, top, step) {
@@ -1687,6 +1903,7 @@
           state.filter = "custom";
           state.current = null;
           state.melody = [];
+          state.bassLine = [];
           state.melodyIndex = 0;
           setActiveButtons("[data-filter]", "custom", "filter");
           refresh();
@@ -1775,7 +1992,7 @@
         els.feedback.className = "feedback bad";
         els.feedback.textContent = `再試一次。你點的是 ${note.display || note.solfege}，目前要彈的是 ${target.solfege}。`;
       }
-      updateStats(visibleNotes());
+      updateStats(visibleNotesForClef("treble"));
     }
 
     function checkAnswer(note, keyEl) {
@@ -1811,9 +2028,11 @@
     function updateHeader() {
       const modeText = state.mode === "practice" ? "練習" : "學習";
       const practiceTypeText = state.mode === "practice" && state.practiceType === "melody" ? "旋律" : "";
-      els.pageTitle.textContent = `${CLEFS[state.clef].label}${practiceTypeText}${modeText}`;
+      els.pageTitle.textContent = state.mode === "practice" && state.practiceType === "melody"
+        ? "鋼琴大譜表旋律練習"
+        : `${CLEFS[state.clef].label}${practiceTypeText}${modeText}`;
       els.pageSubtitle.textContent = state.mode === "practice"
-        ? (state.practiceType === "melody" ? "先聽 4 小節旋律，再依序在鋼琴鍵盤彈出高亮音。" : "請看上方音符，並在下方鋼琴鍵盤點出相同音。")
+        ? (state.practiceType === "melody" ? "先看上下譜共用時間軸的 4 小節鋼琴譜，再依序彈出右手高亮音。" : "請看上方音符，並在下方鋼琴鍵盤點出相同音。")
         : "目前列出所有符合篩選條件的音符與 Do Re Mi 名稱。";
       els.practiceToolbar.classList.toggle("hidden", state.mode !== "practice");
       els.nextBtn.classList.toggle("hidden", state.mode !== "practice" || state.practiceType !== "single");
@@ -1833,7 +2052,9 @@
       renderNoteOptions();
       if (state.mode === "practice") {
         if (state.practiceType === "melody") {
-          if (!state.melody.length || !state.melody.some(item => notes.some(note => note.key === item.note.key))) {
+          const melodyNotes = visibleNotesForClef("treble");
+          updateStats(melodyNotes);
+          if (!state.melody.length || !state.melody.some(item => melodyNotes.some(note => note.key === item.note.key))) {
             generateMelody();
           } else {
             state.current = state.melody[state.melodyIndex]?.note || null;
@@ -1867,6 +2088,7 @@
           state.clef = button.dataset.clef;
           state.current = null;
           state.melody = [];
+          state.bassLine = [];
           state.melodyIndex = 0;
           setActiveButtons("[data-clef]", state.clef, "clef");
           refresh();
@@ -1888,6 +2110,7 @@
           state.practiceType = button.dataset.practiceType;
           state.current = null;
           state.melody = [];
+          state.bassLine = [];
           state.melodyIndex = 0;
           setActiveButtons("[data-practice-type]", state.practiceType, "practiceType");
           refresh();
@@ -1900,6 +2123,7 @@
           state.filter = button.dataset.filter;
           state.current = null;
           state.melody = [];
+          state.bassLine = [];
           state.melodyIndex = 0;
           setActiveButtons("[data-filter]", state.filter, "filter");
           refresh();
@@ -1911,6 +2135,7 @@
         state.ledger = Number(event.target.value);
         state.current = null;
         state.melody = [];
+        state.bassLine = [];
         state.melodyIndex = 0;
         refresh();
       });
@@ -1935,7 +2160,7 @@
         }
         els.feedback.className = "feedback";
         els.feedback.textContent = "分數已重設，繼續練習吧。";
-        updateStats(visibleNotes());
+        updateStats(state.practiceType === "melody" ? visibleNotesForClef("treble") : visibleNotes());
       });
 
       document.querySelectorAll("[data-label-mode]").forEach(button => {
