@@ -381,15 +381,17 @@
 
     .keyboard {
       position: relative;
-      min-height: 166px;
+      min-height: 178px;
       overflow-x: auto;
       padding-bottom: 4px;
-      border-bottom: 7px solid #d7dce6;
+      border-bottom: 8px solid #c6ceda;
+      background: linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
+      border-radius: 8px 8px 4px 4px;
     }
 
     .keyboard-inner {
       position: relative;
-      min-height: 154px;
+      min-height: 166px;
     }
 
     .piano-key {
@@ -403,12 +405,13 @@
       position: absolute;
       top: 0;
       width: 54px;
-      height: 146px;
-      border: 1px solid #b8c0cc;
-      border-bottom: 4px solid #9aa4b2;
-      border-radius: 0 0 7px 7px;
-      background: linear-gradient(180deg, #fff 0%, #f4f6f9 100%);
+      height: 160px;
+      border: 1px solid #aeb7c5;
+      border-bottom: 5px solid #8f99a8;
+      border-radius: 0 0 8px 8px;
+      background: linear-gradient(90deg, #f3f5f8 0%, #ffffff 12%, #ffffff 68%, #e9edf3 100%);
       color: #1f2937;
+      box-shadow: inset -4px 0 8px rgba(15, 23, 42, 0.08), inset 2px 0 5px rgba(255, 255, 255, 0.8);
     }
 
     .black-key {
@@ -416,13 +419,13 @@
       top: 0;
       z-index: 2;
       width: 34px;
-      height: 94px;
-      border: 1px solid #111827;
-      border-bottom: 4px solid #020617;
+      height: 102px;
+      border: 1px solid #020617;
+      border-bottom: 5px solid #000;
       border-radius: 0 0 6px 6px;
-      background: linear-gradient(180deg, #111827 0%, #020617 100%);
+      background: linear-gradient(90deg, #111827 0%, #020617 42%, #1f2937 100%);
       color: #fff;
-      box-shadow: 0 6px 10px rgba(15, 23, 42, 0.28);
+      box-shadow: 0 7px 11px rgba(15, 23, 42, 0.38), inset -3px 0 5px rgba(255, 255, 255, 0.08);
     }
 
     .piano-key:active,
@@ -432,14 +435,16 @@
 
     .white-key:active,
     .white-key.pressed {
-      background: var(--brand-soft);
+      background: linear-gradient(180deg, #dbeafe 0%, #f8fbff 100%);
       border-color: #60a5fa;
+      border-bottom-width: 3px;
     }
 
     .black-key:active,
     .black-key.pressed {
       background: linear-gradient(180deg, #1d4ed8 0%, #1e3a8a 100%);
       border-color: #1e3a8a;
+      border-bottom-width: 3px;
     }
 
     .key-label {
@@ -811,6 +816,12 @@
     const CHROMATIC_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
     const WHITE_KEY_WIDTH = 54;
     const BLACK_KEY_WIDTH = 34;
+    const PIANO_SAMPLE_BASE = "assets/piano/";
+    const PIANO_SAMPLE_MIDIS = [
+      21, 24, 27, 30, 33, 36, 39, 42, 45, 48,
+      51, 54, 57, 60, 63, 66, 69, 72, 75, 78,
+      81, 84, 87, 90, 93, 96, 99, 102, 105, 108
+    ];
 
     const state = {
       clef: "treble",
@@ -823,6 +834,8 @@
       tries: 0,
       timer: null,
       audioContext: null,
+      sampleBuffers: new Map(),
+      samplePromises: new Map(),
       labelMode: "both",
       practiceType: "single",
       melody: [],
@@ -1023,8 +1036,7 @@
         };
       });
 
-      const selectedCount = melody.filter(item => item.fromSelected).length;
-      while (selectedPool.length && selectedCount / melody.length < 0.7) {
+      while (selectedPool.length && melody.filter(item => item.fromSelected).length / melody.length < 0.7) {
         const replaceIndex = melody.findIndex(item => !item.fromSelected);
         if (replaceIndex < 0) break;
         melody[replaceIndex].note = nearestNote(selectedPool, melody[replaceIndex].note.midi);
@@ -1047,19 +1059,41 @@
       state.playbackIndex = null;
     }
 
-    function playMelody() {
+    function ensureAudioContext() {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextClass) {
+        els.feedback.className = "feedback bad";
+        els.feedback.textContent = "這個瀏覽器不支援音訊播放。";
+        return null;
+      }
+      if (!state.audioContext) {
+        state.audioContext = new AudioContextClass();
+      }
+      if (state.audioContext.state === "suspended") {
+        state.audioContext.resume();
+      }
+      return state.audioContext;
+    }
+
+    async function playMelody() {
       if (!state.melody.length) {
         generateMelody();
       }
       if (!state.melody.length) return;
       stopMelodyPlayback();
+      const context = ensureAudioContext();
+      if (!context) return;
+      els.feedback.className = "feedback";
+      els.feedback.textContent = "正在載入鋼琴取樣音色...";
+      const neededSamples = [...new Set(state.melody.map(item => nearestSampleMidi(item.note.midi)))];
+      await Promise.all(neededSamples.map(midi => loadPianoSample(context, midi)));
       state.isPlayingMelody = true;
       let elapsed = 0;
       const beatMs = 520;
       state.melody.forEach((item, index) => {
         const timer = setTimeout(() => {
           state.playbackIndex = index;
-          playNote(item.note);
+          playNote(item.note, Math.max(0.45, item.duration * beatMs / 1000));
           renderMelodyStaff();
           if (index === state.melody.length - 1) {
             const doneTimer = setTimeout(() => {
@@ -1077,57 +1111,135 @@
       els.feedback.textContent = "正在播放旋律示範，跟著聽每個音的位置。";
     }
 
-    function playNote(note) {
-      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-      if (!AudioContextClass) {
-        els.feedback.className = "feedback bad";
-        els.feedback.textContent = "這個瀏覽器不支援音訊播放。";
+    function sampleFileName(midi) {
+      const octave = Math.floor(midi / 12) - 1;
+      const name = CHROMATIC_NAMES[midi % 12].replace("#", "s");
+      return `${name}${octave}v8.ogg`;
+    }
+
+    function nearestSampleMidi(midi) {
+      return PIANO_SAMPLE_MIDIS.reduce((best, sampleMidi) => {
+        const bestDistance = Math.abs(best - midi);
+        const sampleDistance = Math.abs(sampleMidi - midi);
+        return sampleDistance < bestDistance ? sampleMidi : best;
+      }, PIANO_SAMPLE_MIDIS[0]);
+    }
+
+    function loadPianoSample(context, sampleMidi) {
+      if (state.sampleBuffers.has(sampleMidi)) {
+        return Promise.resolve(state.sampleBuffers.get(sampleMidi));
+      }
+      if (state.samplePromises.has(sampleMidi)) {
+        return state.samplePromises.get(sampleMidi);
+      }
+      const promise = fetch(`${PIANO_SAMPLE_BASE}${sampleFileName(sampleMidi)}`)
+        .then(response => {
+          if (!response.ok) throw new Error(`Sample ${sampleMidi} failed`);
+          return response.arrayBuffer();
+        })
+        .then(arrayBuffer => context.decodeAudioData(arrayBuffer))
+        .then(buffer => {
+          state.sampleBuffers.set(sampleMidi, buffer);
+          return buffer;
+        })
+        .catch(error => {
+          state.samplePromises.delete(sampleMidi);
+          console.warn("Piano sample unavailable; using synthesized fallback.", error);
+          return null;
+        });
+      state.samplePromises.set(sampleMidi, promise);
+      return promise;
+    }
+
+    function startSampledPiano(note, lengthSeconds, context, now) {
+      const sampleMidi = nearestSampleMidi(note.midi);
+      const buffer = state.sampleBuffers.get(sampleMidi);
+      if (!buffer) {
+        loadPianoSample(context, sampleMidi);
+        return false;
+      }
+
+      const source = context.createBufferSource();
+      const gain = context.createGain();
+      const tone = context.createBiquadFilter();
+      const releaseStart = Math.max(0.18, Math.min(lengthSeconds, 1.4));
+      const releaseEnd = Math.min(buffer.duration / Math.pow(2, (note.midi - sampleMidi) / 12), releaseStart + 1.15);
+
+      source.buffer = buffer;
+      source.playbackRate.setValueAtTime(Math.pow(2, (note.midi - sampleMidi) / 12), now);
+      tone.type = "lowpass";
+      tone.frequency.setValueAtTime(Math.min(7600, 1800 + note.midi * 72), now);
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(0.92, now + 0.006);
+      gain.gain.exponentialRampToValueAtTime(0.36, now + 0.12);
+      gain.gain.setValueAtTime(0.36, now + releaseStart);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + releaseEnd);
+      source.connect(tone);
+      tone.connect(gain);
+      gain.connect(context.destination);
+      source.start(now);
+      source.stop(now + releaseEnd + 0.04);
+      return true;
+    }
+
+    function playNote(note, lengthSeconds = 1.7) {
+      const context = ensureAudioContext();
+      if (!context) return;
+
+      const now = context.currentTime;
+      if (startSampledPiano(note, lengthSeconds, context, now)) {
         return;
       }
 
-      if (!state.audioContext) {
-        state.audioContext = new AudioContextClass();
-      }
-
-      const context = state.audioContext;
-      if (context.state === "suspended") {
-        context.resume();
-      }
-
-      const now = context.currentTime;
       const fundamental = 440 * Math.pow(2, (note.midi - 69) / 12);
-      const decay = Math.max(0.75, 1.65 - (note.midi - 48) * 0.018);
+      const registerFactor = Math.max(0, Math.min(1, (note.midi - 36) / 48));
+      const decay = Math.max(0.55, Math.min(2.8, lengthSeconds * 0.9 + 1.45 - registerFactor * 0.85));
       const master = context.createGain();
       const filter = context.createBiquadFilter();
       filter.type = "lowpass";
-      filter.frequency.setValueAtTime(5200, now);
-      filter.frequency.exponentialRampToValueAtTime(1300, now + decay);
+      filter.frequency.setValueAtTime(Math.min(7600, fundamental * 14), now);
+      filter.frequency.exponentialRampToValueAtTime(Math.max(1150, fundamental * 5.4), now + decay * 0.72);
       master.gain.setValueAtTime(0.0001, now);
-      master.gain.exponentialRampToValueAtTime(0.42, now + 0.006);
+      master.gain.exponentialRampToValueAtTime(0.48, now + 0.004);
+      master.gain.exponentialRampToValueAtTime(0.18, now + 0.09);
       master.gain.exponentialRampToValueAtTime(0.0001, now + decay);
       master.connect(filter);
       filter.connect(context.destination);
 
       [
-        { multiple: 1, gain: 1, detune: 0 },
-        { multiple: 2.004, gain: 0.56, detune: 2 },
-        { multiple: 3.015, gain: 0.32, detune: -3 },
-        { multiple: 4.028, gain: 0.18, detune: 4 },
-        { multiple: 5.05, gain: 0.10, detune: -5 }
+        { multiple: 1, gain: 1, detune: 0, type: "triangle" },
+        { multiple: 2.01, gain: 0.42, detune: 2, type: "sine" },
+        { multiple: 2.99, gain: 0.24, detune: -3, type: "sine" },
+        { multiple: 4.03, gain: 0.13, detune: 4, type: "sine" },
+        { multiple: 5.04, gain: 0.07, detune: -5, type: "sine" },
+        { multiple: 6.05, gain: 0.035, detune: 6, type: "sine" }
       ].forEach(partial => {
         const oscillator = context.createOscillator();
         const partialGain = context.createGain();
-        oscillator.type = "sine";
+        oscillator.type = partial.type;
         oscillator.frequency.setValueAtTime(fundamental * partial.multiple, now);
         oscillator.detune.setValueAtTime(partial.detune, now);
         partialGain.gain.setValueAtTime(0.0001, now);
-        partialGain.gain.exponentialRampToValueAtTime(partial.gain, now + 0.004);
-        partialGain.gain.exponentialRampToValueAtTime(0.0001, now + decay * (1 - partial.gain * 0.12));
+        partialGain.gain.exponentialRampToValueAtTime(partial.gain, now + 0.003);
+        partialGain.gain.exponentialRampToValueAtTime(partial.gain * 0.38, now + 0.08);
+        partialGain.gain.exponentialRampToValueAtTime(0.0001, now + decay * (1 - partial.gain * 0.1));
         oscillator.connect(partialGain);
         partialGain.connect(master);
         oscillator.start(now);
         oscillator.stop(now + decay + 0.08);
       });
+
+      const chorus = context.createOscillator();
+      const chorusGain = context.createGain();
+      chorus.type = "triangle";
+      chorus.frequency.setValueAtTime(fundamental * 1.0025, now);
+      chorusGain.gain.setValueAtTime(0.0001, now);
+      chorusGain.gain.exponentialRampToValueAtTime(0.18, now + 0.006);
+      chorusGain.gain.exponentialRampToValueAtTime(0.0001, now + decay * 0.92);
+      chorus.connect(chorusGain);
+      chorusGain.connect(master);
+      chorus.start(now);
+      chorus.stop(now + decay);
 
       const noiseDuration = 0.035;
       const noiseBuffer = context.createBuffer(1, Math.ceil(context.sampleRate * noiseDuration), context.sampleRate);
@@ -1141,9 +1253,9 @@
       const hammerFilter = context.createBiquadFilter();
       hammer.buffer = noiseBuffer;
       hammerFilter.type = "bandpass";
-      hammerFilter.frequency.setValueAtTime(Math.min(4200, fundamental * 7), now);
-      hammerFilter.Q.setValueAtTime(1.8, now);
-      hammerGain.gain.setValueAtTime(0.18, now);
+      hammerFilter.frequency.setValueAtTime(Math.min(5200, Math.max(850, fundamental * 9)), now);
+      hammerFilter.Q.setValueAtTime(2.1, now);
+      hammerGain.gain.setValueAtTime(0.12 + registerFactor * 0.08, now);
       hammerGain.gain.exponentialRampToValueAtTime(0.0001, now + noiseDuration);
       hammer.connect(hammerFilter);
       hammerFilter.connect(hammerGain);
@@ -1347,12 +1459,12 @@
     function renderMelodyStaff() {
       const svg = els.staffSvg;
       svg.innerHTML = "";
-      svg.setAttribute("viewBox", "0 0 900 360");
+      svg.setAttribute("viewBox", "0 0 980 320");
       svg.style.minWidth = "";
       if (!state.melody.length) {
         svg.appendChild(createSvgElement("text", {
-          x: 450,
-          y: 178,
+          x: 490,
+          y: 160,
           "text-anchor": "middle",
           "font-size": 22,
           "font-weight": 800,
@@ -1361,12 +1473,21 @@
         return;
       }
 
-      const left = 150;
-      const right = 835;
-      const top = STAFF_TOP;
-      const step = STEP;
+      const left = 182;
+      const right = 930;
+      const top = 126;
+      const step = 13;
       const measureWidth = (right - left) / 4;
       const clef = CLEFS[state.clef];
+
+      svg.appendChild(createSvgElement("text", {
+        x: 490,
+        y: 48,
+        "text-anchor": "middle",
+        "font-size": 23,
+        "font-weight": 900,
+        fill: "#1f2937"
+      }, "4 小節旋律練習"));
 
       for (let i = 0; i < 5; i += 1) {
         const y = top + i * step * 2;
@@ -1381,84 +1502,100 @@
       }
 
       svg.appendChild(createSvgElement("text", {
-        x: clef.symbolX,
-        y: clef.symbolY,
+        x: 70,
+        y: state.clef === "treble" ? 226 : 198,
         "font-size": clef.symbolSize,
         "font-family": "Georgia, 'Times New Roman', serif",
         fill: "#111827"
       }, clef.symbol));
 
       svg.appendChild(createSvgElement("text", {
-        x: 450,
-        y: 48,
+        x: 136,
+        y: top + 22,
         "text-anchor": "middle",
-        "font-size": 22,
-        "font-weight": 800,
-        fill: "#344054"
-      }, "4 小節旋律練習"));
+        "font-size": 27,
+        "font-family": "Georgia, 'Times New Roman', serif",
+        "font-weight": 700,
+        fill: "#111827"
+      }, "4"));
+
+      svg.appendChild(createSvgElement("text", {
+        x: 136,
+        y: top + 50,
+        "text-anchor": "middle",
+        "font-size": 27,
+        "font-family": "Georgia, 'Times New Roman', serif",
+        "font-weight": 700,
+        fill: "#111827"
+      }, "4"));
 
       for (let measure = 0; measure <= 4; measure += 1) {
         const x = left + measure * measureWidth;
         svg.appendChild(createSvgElement("line", {
           x1: x,
-          y1: staffLineY(0),
+          y1: top,
           x2: x,
-          y2: staffLineY(4),
+          y2: top + step * 8,
           stroke: "#111827",
-          "stroke-width": measure === 4 ? 3 : 1.8
+          "stroke-width": measure === 4 ? 3.5 : 1.9
         }));
       }
 
+      svg.appendChild(createSvgElement("line", {
+        x1: right - 7,
+        y1: top,
+        x2: right - 7,
+        y2: top + step * 8,
+        stroke: "#111827",
+        "stroke-width": 1.7
+      }));
+
       state.melody.forEach((item, index) => {
         const note = item.note;
-        const noteX = left + item.measure * measureWidth + (item.beat + item.duration / 2) / 4 * measureWidth;
+        const noteX = left + item.measure * measureWidth + 28 + (item.beat + item.duration * 0.42) / 4 * (measureWidth - 56);
         const noteY = top + (8 - note.staffIndex) * step;
         const isCurrent = index === state.melodyIndex;
         const isPlayback = index === state.playbackIndex;
+        const stemUp = note.staffIndex <= 4;
+        const stemX = stemUp ? noteX + 14 : noteX - 14;
+        const stemEndY = stemUp ? noteY - 62 : noteY + 62;
         const noteGroup = createSvgElement("g", {
           class: "melody-note",
           "aria-label": `${note.letter} ${note.solfege}`
         });
 
-        drawLedgerLines(svg, note.staffIndex, noteX, 58, top, step);
+        drawLedgerLines(svg, note.staffIndex, noteX, 48, top, step);
         if (isCurrent || isPlayback) {
           noteGroup.appendChild(createSvgElement("ellipse", {
             cx: noteX,
             cy: noteY,
-            rx: 29,
-            ry: 21,
+            rx: 27,
+            ry: 20,
             fill: isPlayback ? "#fef3c7" : "#dbeafe",
             stroke: isPlayback ? "#f59e0b" : "#2563eb",
-            "stroke-width": 3
+            "stroke-width": 3.2
           }));
         }
 
         noteGroup.appendChild(createSvgElement("ellipse", {
           cx: noteX,
           cy: noteY,
-          rx: 18,
-          ry: 12,
+          rx: 17,
+          ry: 11.5,
           transform: `rotate(-18 ${noteX} ${noteY})`,
           fill: item.duration === 2 ? "#ffffff" : "#111827",
           stroke: "#111827",
-          "stroke-width": 2
+          "stroke-width": item.duration === 2 ? 2.8 : 2
         }));
         noteGroup.appendChild(createSvgElement("line", {
-          x1: noteX + 16,
+          x1: stemX,
           y1: noteY,
-          x2: noteX + 16,
-          y2: noteY - 55,
+          x2: stemX,
+          y2: stemEndY,
           stroke: "#111827",
-          "stroke-width": 2.4
+          "stroke-width": 2.5,
+          "stroke-linecap": "round"
         }));
-        noteGroup.appendChild(createSvgElement("text", {
-          x: noteX,
-          y: 302,
-          "text-anchor": "middle",
-          "font-size": 13,
-          "font-weight": 800,
-          fill: isCurrent ? "#2563eb" : "#667085"
-        }, `${note.letter}/${note.solfege}`));
         svg.appendChild(noteGroup);
       });
     }
